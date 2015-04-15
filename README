@@ -1,3 +1,11 @@
+ABOUT This Repo
+
+  This is my own Transimission modification.
+  Here are my personal tweaked features:
+
+    * Use previous downloading folder instead of asking for a new location.
+    * When delete finished job, do it silently instead of popping up an alert.
+
 ABOUT
 
   Transmission is a fast, easy, and free BitTorrent client.
