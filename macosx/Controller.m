@@ -445,6 +445,7 @@ static void sleepCallback(void * controller, io_service_t y, natural_t messageTy
     [fTableView registerForDraggedTypes: [NSArray arrayWithObject: TORRENT_TABLE_VIEW_DATA_TYPE]];
     [fWindow registerForDraggedTypes: [NSArray arrayWithObjects: NSFilenamesPboardType, NSURLPboardType, nil]];
     
+
     //sort the sort menu items (localization is from strings file)
     NSMutableArray * sortMenuItems = [NSMutableArray arrayWithCapacity: 7];
     NSUInteger sortMenuIndex = 0;
@@ -666,6 +667,8 @@ static void sleepCallback(void * controller, io_service_t y, natural_t messageTy
             [alert release];
         }
     }
+    
+    [fWindow setMinSize:NSMakeSize(700, 410)];
 }
 
 - (BOOL) applicationShouldHandleReopen: (NSApplication *) app hasVisibleWindows: (BOOL) visibleWindows

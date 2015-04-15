@@ -4660,7 +4660,12 @@ evdns_getaddrinfo(struct evdns_base *dns_base,
 void
 evdns_getaddrinfo_cancel(struct evdns_getaddrinfo_request *data)
 {
-	EVDNS_LOCK(data->evdns_base);
+    //by keefo
+    EVUTIL_ASSERT (_evthread_lock_fns.lock != NULL);
+    EVUTIL_ASSERT (_evthread_lock_fns.unlock != NULL);
+    
+    EVDNS_LOCK(data->evdns_base);
+    
 	if (data->request_done) {
 		EVDNS_UNLOCK(data->evdns_base);
 		return;
