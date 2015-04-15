@@ -7,6 +7,7 @@ VERSION_FILE=$1
 TEMPLATE_FILE=$2
 FILE=$3
 TMPFILE=$3.tmp
+CURRENT_DIR=$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )
 
 # detecting the OS name and version
 OS_NAME=`uname -s`
@@ -38,7 +39,7 @@ if [ "$OS_NAME" = "AmigaOS" ]; then
 fi
 
 echo "Detected OS [$OS_NAME] version [$OS_VERSION]"
-MINIUPNPC_VERSION=`cat VERSION`
+MINIUPNPC_VERSION=`cat $CURRENT_DIR/VERSION`
 echo "MiniUPnPc version [${MINIUPNPC_VERSION}]"
 
 EXPR="s|OS_STRING \".*\"|OS_STRING \"${OS_NAME}/${OS_VERSION}\"|"
