@@ -1,5 +1,5 @@
 /******************************************************************************
- * $Id$
+ * $Id: tr-core.h 13983 2013-02-08 01:34:59Z jordan $
  *
  * Copyright (c) Transmission authors and contributors
  *

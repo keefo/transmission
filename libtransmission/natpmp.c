@@ -4,7 +4,7 @@
  * It may be used under the GNU GPL versions 2 or 3
  * or any future license endorsed by Mnemosyne LLC.
  *
- * $Id$
+ * $Id: natpmp.c 14479 2015-03-18 07:34:26Z mikedld $
  */
 
 #include <errno.h>
@@ -84,7 +84,7 @@ tr_natpmpInit (void)
     nat->state = TR_NATPMP_DISCOVER;
     nat->public_port = 0;
     nat->private_port = 0;
-    nat->natpmp.s = -1; /* socket */
+    nat->natpmp.s = TR_BAD_SOCKET; /* socket */
     return nat;
 }
 
@@ -93,8 +93,7 @@ tr_natpmpClose (tr_natpmp * nat)
 {
     if (nat)
     {
-        if (nat->natpmp.s >= 0)
-            tr_netCloseSocket (nat->natpmp.s);
+        closenatpmp (&nat->natpmp);
         tr_free (nat);
     }
 }

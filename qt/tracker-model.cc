@@ -1,10 +1,10 @@
 /*
  * This file Copyright (C) 2009-2014 Mnemosyne LLC
  *
- * It may be used under the GNU Public License v2 or v3 licenses,
+ * It may be used under the GNU GPL versions 2 or 3
  * or any future license endorsed by Mnemosyne LLC.
  *
- * $Id$
+ * $Id: tracker-model.cc 14404 2014-12-27 14:07:14Z mikedld $
  */
 
 #include <algorithm> // std::sort()
@@ -15,7 +15,7 @@
 #include "tracker-model.h"
 
 int
-TrackerModel :: rowCount (const QModelIndex& parent) const
+TrackerModel::rowCount (const QModelIndex& parent) const
 {
   Q_UNUSED (parent);
 
@@ -23,7 +23,7 @@ TrackerModel :: rowCount (const QModelIndex& parent) const
 }
 
 QVariant
-TrackerModel :: data (const QModelIndex& index, int role) const
+TrackerModel::data (const QModelIndex& index, int role) const
 {
   QVariant var;
 
@@ -36,7 +36,7 @@ TrackerModel :: data (const QModelIndex& index, int role) const
       switch (role)
         {
           case Qt::DisplayRole:
-            var = QString (trackerInfo.st.announce);
+            var = trackerInfo.st.announce;
             break;
 
           case Qt::DecorationRole:
@@ -77,7 +77,7 @@ struct CompareTrackers
 };
 
 void
-TrackerModel :: refresh (const TorrentModel& torrentModel, const QSet<int>& ids)
+TrackerModel::refresh (const TorrentModel& torrentModel, const QSet<int>& ids)
 {
   // build a list of the TrackerInfos
   QVector<TrackerInfo> trackers;
@@ -152,7 +152,7 @@ TrackerModel :: refresh (const TorrentModel& torrentModel, const QSet<int>& ids)
 }
 
 int
-TrackerModel :: find (int torrentId, const QString& url) const
+TrackerModel::find (int torrentId, const QString& url) const
 {
   for (int i=0, n=myRows.size(); i<n; ++i)
     {

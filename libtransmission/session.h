@@ -4,7 +4,7 @@
  * It may be used under the GNU GPL versions 2 or 3
  * or any future license endorsed by Mnemosyne LLC.
  *
- * $Id$
+ * $Id: session.h 14479 2015-03-18 07:34:26Z mikedld $
  */
 
 #ifndef __TRANSMISSION__
@@ -26,6 +26,7 @@
 
 #include "bandwidth.h"
 #include "bitfield.h"
+#include "net.h"
 #include "utils.h"
 #include "variant.h"
 
@@ -150,8 +151,8 @@ struct tr_session
 
     /* The UDP sockets used for the DHT and uTP. */
     tr_port                      udp_port;
-    int                          udp_socket;
-    int                          udp6_socket;
+    tr_socket_t                  udp_socket;
+    tr_socket_t                  udp6_socket;
     unsigned char *              udp6_bound;
     struct event                 *udp_event;
     struct event                 *udp6_event;

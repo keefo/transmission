@@ -4,7 +4,7 @@
  * It may be used under the GNU GPL versions 2 or 3
  * or any future license endorsed by Mnemosyne LLC.
  *
- * $Id$
+ * $Id: file-tree.h 14466 2015-01-29 21:53:05Z mikedld $
  */
 
 #ifndef QTR_FILE_TREE
@@ -15,6 +15,7 @@
 #include <QItemDelegate>
 #include <QList>
 #include <QHash>
+#include <QMap>
 #include <QSet>
 #include <QSize>
 #include <QString>
@@ -32,7 +33,7 @@ class QStyle;
 
 class FileTreeItem: public QObject
 {
-    Q_OBJECT;
+    Q_OBJECT
 
     enum { LOW=(1<<0), NORMAL=(1<<1), HIGH=(1<<2) };
 
@@ -40,7 +41,7 @@ class FileTreeItem: public QObject
 
     virtual ~FileTreeItem();
 
-    FileTreeItem (const QString& name="", int fileIndex=-1, uint64_t size=0):
+    FileTreeItem (const QString& name=QString (), int fileIndex=-1, uint64_t size=0):
       myFileIndex (fileIndex),
       myParent (0),
       myName (name),
@@ -99,6 +100,8 @@ class FileTreeModel: public QAbstractItemModel
     FileTreeModel (QObject *parent = 0, bool isEditable = true);
     ~FileTreeModel ();
 
+    void setEditable (bool editable);
+
   public:
     QVariant data (const QModelIndex &index, int role = Qt::DisplayRole) const;
     Qt::ItemFlags flags (const QModelIndex& index) const;
@@ -127,14 +130,15 @@ class FileTreeModel: public QAbstractItemModel
   private:
     void clearSubtree (const QModelIndex &);
     QModelIndex indexOf (FileTreeItem *, int column) const;
-    void parentsChanged (const QModelIndex &, int column);
-    void subtreeChanged (const QModelIndex &, int column);
+    void parentsChanged (const QModelIndex &, int firstColumn, int lastColumn);
+    void subtreeChanged (const QModelIndex &, int firstColumn, int lastColumn);
     FileTreeItem * findItemForFileIndex (int fileIndex) const;
     FileTreeItem * itemFromIndex (const QModelIndex&) const;
 
   private:
     FileTreeItem * myRootItem;
-    const bool myIsEditable;
+    QMap<int, FileTreeItem *> myIndexCache;
+    bool myIsEditable;
 
   public slots:
     void clicked (const QModelIndex & index);
@@ -163,6 +167,8 @@ class FileTreeView: public QTreeView
     virtual ~FileTreeView ();
     void clear ();
     void update (const FileList& files, bool updateProperties=true);
+
+    void setEditable (bool editable);
 
   signals:
     void priorityChanged (const QSet<int>& fileIndices, int priority);

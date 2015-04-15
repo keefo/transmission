@@ -1,28 +1,28 @@
 /*
  * This file Copyright (C) 2009-2014 Mnemosyne LLC
  *
- * It may be used under the GNU Public License v2 or v3 licenses,
+ * It may be used under the GNU GPL versions 2 or 3
  * or any future license endorsed by Mnemosyne LLC.
  *
- * $Id$
+ * $Id: filters.cc 14466 2015-01-29 21:53:05Z mikedld $
  */
 
 #include "filters.h"
 
 const QString FilterMode::names[NUM_MODES] =
 {
-  "show-all",
-  "show-active",
-  "show-downloading",
-  "show-seeding",
-  "show-paused",
-  "show-finished",
-  "show-verifying",
-  "show-error",
+  QLatin1String ("show-all"),
+  QLatin1String ("show-active"),
+  QLatin1String ("show-downloading"),
+  QLatin1String ("show-seeding"),
+  QLatin1String ("show-paused"),
+  QLatin1String ("show-finished"),
+  QLatin1String ("show-verifying"),
+  QLatin1String ("show-error")
 };
 
 int
-FilterMode :: modeFromName( const QString& name )
+FilterMode::modeFromName (const QString& name)
 {
   for (int i=0; i<NUM_MODES; ++i)
     if( names[i] == name )
@@ -33,20 +33,20 @@ FilterMode :: modeFromName( const QString& name )
 
 const QString SortMode::names[NUM_MODES] =
 {
-  "sort-by-activity",
-  "sort-by-age",
-  "sort-by-eta",
-  "sort-by-name",
-  "sort-by-progress",
-  "sort-by-queue"
-  "sort-by-ratio",
-  "sort-by-size",
-  "sort-by-state",
-  "sort-by-id"
+  QLatin1String ("sort-by-activity"),
+  QLatin1String ("sort-by-age"),
+  QLatin1String ("sort-by-eta"),
+  QLatin1String ("sort-by-name"),
+  QLatin1String ("sort-by-progress"),
+  QLatin1String ("sort-by-queue"),
+  QLatin1String ("sort-by-ratio"),
+  QLatin1String ("sort-by-size"),
+  QLatin1String ("sort-by-state"),
+  QLatin1String ("sort-by-id")
 };
 
 int
-SortMode :: modeFromName (const QString& name)
+SortMode::modeFromName (const QString& name)
 {
   for (int i=0; i<NUM_MODES; ++i)
     if (names[i] == name)

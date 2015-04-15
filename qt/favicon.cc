@@ -1,10 +1,10 @@
 /*
  * This file Copyright (C) 2012-2014 Mnemosyne LLC
  *
- * It may be used under the GNU Public License v2 or v3 licenses,
+ * It may be used under the GNU GPL versions 2 or 3
  * or any future license endorsed by Mnemosyne LLC.
  *
- * $Id$
+ * $Id: favicon.cc 14466 2015-01-29 21:53:05Z mikedld $
  */
 
 #include <QDir>
@@ -24,13 +24,13 @@
 ****
 ***/
 
-Favicons :: Favicons ()
+Favicons::Favicons ()
 {
   myNAM = new QNetworkAccessManager ();
   connect (myNAM, SIGNAL(finished(QNetworkReply*)), this, SLOT(onRequestFinished(QNetworkReply*)));
 }
 
-Favicons :: ~Favicons ()
+Favicons::~Favicons ()
 {
   delete myNAM;
 }
@@ -40,7 +40,7 @@ Favicons :: ~Favicons ()
 ***/
 
 QString
-Favicons :: getCacheDir ()
+Favicons::getCacheDir ()
 {
   const QString base =
 #if QT_VERSION < QT_VERSION_CHECK(5, 0, 0)
@@ -49,11 +49,11 @@ Favicons :: getCacheDir ()
     QStandardPaths::writableLocation (QStandardPaths::CacheLocation);
 #endif
 
-  return QDir(base).absoluteFilePath ("favicons");
+  return QDir(base).absoluteFilePath (QLatin1String ("favicons"));
 }
 
 void
-Favicons :: ensureCacheDirHasBeenScanned ()
+Favicons::ensureCacheDirHasBeenScanned ()
 {
   static bool hasBeenScanned = false;
 
@@ -76,11 +76,11 @@ Favicons :: ensureCacheDirHasBeenScanned ()
 }
 
 QString
-Favicons :: getHost (const QUrl& url)
+Favicons::getHost (const QUrl& url)
 {
   QString host = url.host ();
-  const int first_dot = host.indexOf ('.');
-  const int last_dot = host.lastIndexOf ('.');
+  const int first_dot = host.indexOf (QLatin1Char ('.'));
+  const int last_dot = host.lastIndexOf (QLatin1Char ('.'));
 
   if ((first_dot != -1) && (last_dot != -1) &&  (first_dot != last_dot))
     host.remove (0, first_dot + 1);
@@ -88,28 +88,30 @@ Favicons :: getHost (const QUrl& url)
   return host;
 }
 
+QSize
+Favicons::getIconSize ()
+{
+  return QSize (16, 16);
+}
+
 QPixmap
-Favicons :: find (const QUrl& url)
+Favicons::find (const QUrl& url)
 {
   return findFromHost (getHost (url));
 }
 
-namespace
-{
-  const QSize rightSize (16, 16);
-};
-
 QPixmap
-Favicons :: findFromHost (const QString& host)
+Favicons::findFromHost (const QString& host)
 {
   ensureCacheDirHasBeenScanned ();
 
-  const QPixmap pixmap = myPixmaps[ host ];
-  return pixmap.size()==rightSize ? pixmap : pixmap.scaled(rightSize);
+  const QPixmap pixmap = myPixmaps[host];
+  const QSize rightSize = getIconSize ();
+  return pixmap.isNull () || pixmap.size () == rightSize ? pixmap : pixmap.scaled (rightSize);
 }
 
 void
-Favicons :: add (const QUrl& url)
+Favicons::add (const QUrl& url)
 {
   ensureCacheDirHasBeenScanned ();
 
@@ -118,21 +120,19 @@ Favicons :: add (const QUrl& url)
   if (!myPixmaps.contains (host))
     {
       // add a placholder s.t. we only ping the server once per session
-      QPixmap tmp (rightSize);
-      tmp.fill (Qt::transparent);
-      myPixmaps.insert (host, tmp);
+      myPixmaps.insert (host, QPixmap ());
 
       // try to download the favicon
-      const QString path = "http://" + host + "/favicon.";
+      const QString path = QLatin1String ("http://") + host + QLatin1String ("/favicon.");
       QStringList suffixes;
-      suffixes << "ico" << "png" << "gif" << "jpg";
+      suffixes << QLatin1String ("ico") << QLatin1String ("png") << QLatin1String ("gif") << QLatin1String ("jpg");
       foreach (QString suffix, suffixes)
         myNAM->get (QNetworkRequest (path + suffix));
     }
 }
 
 void
-Favicons :: onRequestFinished (QNetworkReply * reply)
+Favicons::onRequestFinished (QNetworkReply * reply)
 {
   const QString host = reply->url().host();
 

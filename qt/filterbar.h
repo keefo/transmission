@@ -4,7 +4,7 @@
  * It may be used under the GNU GPL versions 2 or 3
  * or any future license endorsed by Mnemosyne LLC.
  *
- * $Id$
+ * $Id: filterbar.h 14468 2015-01-29 22:44:43Z mikedld $
  */
 
 #ifndef QTR_FILTERBAR_H
@@ -12,6 +12,7 @@
 
 #include <QComboBox>
 #include <QItemDelegate>
+#include <QLineEdit>
 #include <QWidget>
 
 class QLabel;
@@ -19,6 +20,7 @@ class QLineEdit;
 class QPaintEvent;
 class QStandardItemModel;
 class QTimer;
+class QToolButton;
 
 class Prefs;
 class TorrentFilter;
@@ -52,17 +54,39 @@ class FilterBarComboBox: public QComboBox
     FilterBarComboBox (QWidget * parent = 0);
     int currentCount () const;
 
+    virtual QSize minimumSizeHint () const;
+    virtual QSize sizeHint () const;
+
   protected:
     virtual void paintEvent (QPaintEvent * e);
+
+  private:
+    QSize calculateSize (const QSize& textSize, const QSize& countSize) const;
 };
 
+class FilterBarLineEdit: public QLineEdit
+{
+    Q_OBJECT
+
+  public:
+    FilterBarLineEdit (QWidget * parent = 0);
+
+  protected:
+    virtual void resizeEvent (QResizeEvent * event);
+
+  private slots:
+    void updateClearButtonVisibility ();
+
+  private:
+    QToolButton * myClearButton;
+};
 
 class FilterBar: public QWidget
 {
     Q_OBJECT
 
   public:
-    FilterBar (Prefs& prefs, TorrentModel& torrents, TorrentFilter& filter, QWidget * parent = 0);
+    FilterBar (Prefs& prefs, const TorrentModel& torrents, const TorrentFilter& filter, QWidget * parent = 0);
     ~FilterBar ();
 
   private:
@@ -74,15 +98,15 @@ class FilterBar: public QWidget
 
   private:
     Prefs& myPrefs;
-    TorrentModel& myTorrents;
-    TorrentFilter& myFilter;
+    const TorrentModel& myTorrents;
+    const TorrentFilter& myFilter;
     FilterBarComboBox * myActivityCombo;
     FilterBarComboBox * myTrackerCombo;
     QLabel * myCountLabel;
     QStandardItemModel * myTrackerModel;
     QTimer * myRecountTimer;
     bool myIsBootstrapping;
-    QLineEdit * myLineEdit;
+    FilterBarLineEdit * myLineEdit;
 
   private slots:
     void recount ();

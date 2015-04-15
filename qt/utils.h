@@ -4,15 +4,16 @@
  * It may be used under the GNU GPL versions 2 or 3
  * or any future license endorsed by Mnemosyne LLC.
  *
- * $Id$
+ * $Id: utils.h 14464 2015-01-28 22:57:46Z mikedld $
  */
 
 #ifndef QTR_UTILS
 #define QTR_UTILS
 
-#include <QString>
-#include <QObject>
 #include <QIcon>
+#include <QObject>
+#include <QRect>
+#include <QString>
 
 #include <cctype> // isxdigit()
 
@@ -27,15 +28,18 @@ class Utils: public QObject
     virtual ~Utils () {}
 
   public:
-    static QString remoteFileChooser (QWidget * parent, const QString& title, const QString& myPath, bool dir, bool local);
     static QIcon guessMimeIcon (const QString& filename);
     // Test if string is UTF-8 or not
     static bool isValidUtf8  (const char *s);
 
     static QString removeTrailingDirSeparator (const QString& path);
 
-    // meh
-    static void toStderr (const QString& qstr);
+    static void narrowRect (QRect& rect, int dx1, int dx2, Qt::LayoutDirection direction)
+    {
+      if (direction == Qt::RightToLeft)
+        qSwap (dx1, dx2);
+      rect.adjust (dx1, 0, -dx2, 0);
+    }
 
     ///
     /// URLs

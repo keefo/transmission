@@ -4,7 +4,7 @@
  * It may be used under the GNU GPL versions 2 or 3
  * or any future license endorsed by Mnemosyne LLC.
  *
- * $Id$
+ * $Id: trevent.c 14479 2015-03-18 07:34:26Z mikedld $
  */
 
 #include <assert.h>
@@ -12,6 +12,12 @@
 #include <string.h>
 
 #include <signal.h>
+
+#ifdef _WIN32
+ #include <winsock2.h>
+#else
+ #include <unistd.h> /* read (), write (), pipe () */
+#endif
 
 #include <event2/dns.h>
 #include <event2/event.h>
@@ -21,13 +27,18 @@
 #include "net.h"
 #include "session.h"
 
-#ifdef WIN32
-
+#include "transmission.h"
+#include "platform.h" /* tr_lockLock () */
+#include "trevent.h"
 #include "utils.h"
-#include <winsock2.h>
+
+
+#ifdef _WIN32
+
+typedef SOCKET tr_pipe_end_t;
 
 static int
-pgpipe (int handles[2])
+pgpipe (tr_pipe_end_t handles[2])
 {
     SOCKET s;
     struct sockaddr_in serv_addr;
@@ -89,7 +100,9 @@ pgpipe (int handles[2])
 }
 
 static int
-piperead (int s, char *buf, int len)
+piperead (tr_pipe_end_t   s,
+          void          * buf,
+          int             len)
 {
     int ret = recv (s, buf, len, 0);
 
@@ -100,10 +113,10 @@ piperead (int s, char *buf, int len)
             case WSAEWOULDBLOCK:
                 errno = EAGAIN;
                 break;
-	    case WSAECONNRESET:
-	        /* EOF on the pipe! (win32 socket based implementation) */
-	        ret = 0;
-	        /* fall through */
+            case WSAECONNRESET:
+                /* EOF on the pipe! (win32 socket based implementation) */
+                ret = 0;
+                /* fall through */
             default:
                 errno = werror;
                 break;
@@ -117,16 +130,10 @@ piperead (int s, char *buf, int len)
 #define pipewrite(a,b,c) send (a, (char*)b,c,0)
 
 #else
+typedef int tr_pipe_end_t;
 #define piperead(a,b,c) read (a,b,c)
 #define pipewrite(a,b,c) write (a,b,c)
 #endif
-
-#include <unistd.h> /* read (), write (), pipe () */
-
-#include "transmission.h"
-#include "platform.h" /* tr_lockLock () */
-#include "trevent.h"
-#include "utils.h"
 
 /***
 ****
@@ -135,7 +142,7 @@ piperead (int s, char *buf, int len)
 typedef struct tr_event_handle
 {
     uint8_t      die;
-    int          fds[2];
+    tr_pipe_end_t fds[2];
     tr_lock *    lock;
     tr_session *  session;
     tr_thread *  thread;
@@ -222,7 +229,7 @@ libeventThreadFunc (void * veh)
     struct event_base * base;
     tr_event_handle * eh = veh;
 
-#ifndef WIN32
+#ifndef _WIN32
     /* Don't exit when writing on a broken socket */
     signal (SIGPIPE, SIG_IGN);
 #endif
@@ -312,7 +319,7 @@ tr_runInEventThread (tr_session * session,
     }
   else
     {
-      int fd;
+      tr_pipe_end_t fd;
       char ch;
       ssize_t res_1;
       ssize_t res_2;

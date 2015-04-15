@@ -1,50 +1,38 @@
 /*
  * This file Copyright (C) 2009-2014 Mnemosyne LLC
  *
- * It may be used under the GNU Public License v2 or v3 licenses,
+ * It may be used under the GNU GPL versions 2 or 3
  * or any future license endorsed by Mnemosyne LLC.
  *
- * $Id$
+ * $Id: details.cc 14468 2015-01-29 22:44:43Z mikedld $
  */
 
 #include <cassert>
 #include <climits> /* INT_MAX */
 #include <ctime>
 
-#include <QCheckBox>
-#include <QComboBox>
 #include <QDateTime>
 #include <QDesktopServices>
-#include <QDialogButtonBox>
-#include <QDoubleSpinBox>
 #include <QEvent>
 #include <QFont>
 #include <QFontMetrics>
-#include <QHBoxLayout>
-#include <QHBoxLayout>
 #include <QHeaderView>
+#include <QHostAddress>
 #include <QInputDialog>
 #include <QItemSelectionModel>
 #include <QLabel>
 #include <QList>
 #include <QMap>
 #include <QMessageBox>
-#include <QPushButton>
-#include <QRadioButton>
 #include <QResizeEvent>
-#include <QSpinBox>
 #include <QStringList>
 #include <QStyle>
-#include <QTabWidget>
-#include <QTextBrowser>
-#include <QTreeView>
-#include <QTreeWidget>
 #include <QTreeWidgetItem>
-#include <QVBoxLayout>
 
 #include <libtransmission/transmission.h>
 #include <libtransmission/utils.h> // tr_getRatio ()
 
+#include "column-resizer.h"
 #include "details.h"
 #include "file-tree.h"
 #include "formatter.h"
@@ -57,6 +45,7 @@
 #include "tracker-delegate.h"
 #include "tracker-model.h"
 #include "tracker-model-filter.h"
+#include "utils.h"
 
 class Prefs;
 class Session;
@@ -82,6 +71,16 @@ namespace
     COL_CLIENT,
     N_COLUMNS
   };
+
+  int
+  measureViewItem (QAbstractItemView * view, const QString& text)
+  {
+    QStyleOptionViewItemV4 option;
+    option.features = QStyleOptionViewItemV2::HasDisplay;
+    option.text = text;
+    return view->style ()->sizeFromContents (QStyle::CT_ItemViewItem, &option,
+      QSize (QWIDGETSIZE_MAX, QWIDGETSIZE_MAX), view).width ();
+  }
 }
 
 /***
@@ -91,26 +90,20 @@ namespace
 class PeerItem: public QTreeWidgetItem
 {
     Peer peer;
-    QString collatedAddress;
+    mutable QString collatedAddress;
     QString status;
 
   public:
-
+    PeerItem (const Peer& p): peer(p) {}
     virtual ~PeerItem () {}
 
-    PeerItem (const Peer& p)
-    {
-      peer = p;
-      int q[4];
-      if (sscanf (p.address.toUtf8 ().constData (), "%d.%d.%d.%d", q+0, q+1, q+2, q+3) == 4)
-        collatedAddress.sprintf ("%03d.%03d.%03d.%03d", q[0], q[1], q[2], q[3]);
-      else
-        collatedAddress = p.address;
-    }
-
   public:
-
-    void refresh (const Peer& p) { peer = p; }
+    void refresh (const Peer& p)
+    {
+      if (p.address != peer.address)
+        collatedAddress.clear ();
+      peer = p;
+    }
 
     void setStatus (const QString& s) { status = s; }
 
@@ -127,8 +120,39 @@ class PeerItem: public QTreeWidgetItem
           case COL_STATUS: return status < i->status;
           case COL_CLIENT: return peer.clientName < i->peer.clientName;
           case COL_LOCK: return peer.isEncrypted && !i->peer.isEncrypted;
-          default: return collatedAddress < i->collatedAddress;
+          default: return address () < i->address ();
         }
+    }
+
+  private:
+    const QString& address () const
+    {
+      if (collatedAddress.isEmpty ())
+        {
+          QHostAddress ipAddress;
+          if (ipAddress.setAddress (peer.address))
+            {
+              if (ipAddress.protocol () == QAbstractSocket::IPv4Protocol)
+                {
+                  const quint32 ipv4Address = ipAddress.toIPv4Address ();
+                  collatedAddress = QLatin1String ("1-") +
+                    QString::fromLatin1 (QByteArray::number (ipv4Address, 16).rightJustified (8, '0'));
+                }
+              else if (ipAddress.protocol () == QAbstractSocket::IPv6Protocol)
+                {
+                  const Q_IPV6ADDR ipv6Address = ipAddress.toIPv6Address ();
+                  QByteArray tmp (16, '\0');
+                  for (int i = 0; i < 16; ++i)
+                    tmp[i] = ipv6Address[i];
+                  collatedAddress = QLatin1String ("2-") + QString::fromLatin1 (tmp.toHex ());
+                }
+            }
+
+          if (collatedAddress.isEmpty ())
+            collatedAddress = QLatin1String ("3-") + peer.address.toLower ();
+        }
+
+      return collatedAddress;
     }
 };
 
@@ -137,7 +161,7 @@ class PeerItem: public QTreeWidgetItem
 ***/
 
 QIcon
-Details :: getStockIcon (const QString& freedesktop_name, int fallback)
+Details::getStockIcon (const QString& freedesktop_name, int fallback)
 {
   QIcon icon = QIcon::fromTheme (freedesktop_name);
 
@@ -147,10 +171,10 @@ Details :: getStockIcon (const QString& freedesktop_name, int fallback)
   return icon;
 }
 
-Details :: Details (Session       & session,
-                    Prefs         & prefs,
-                    TorrentModel  & model,
-                    QWidget       * parent):
+Details::Details (Session       & session,
+                  Prefs         & prefs,
+                  const TorrentModel& model,
+                  QWidget       * parent):
   QDialog (parent, Qt::Dialog),
   mySession (session),
   myPrefs (prefs),
@@ -158,32 +182,22 @@ Details :: Details (Session       & session,
   myChangedTorrents (false),
   myHavePendingRefresh (false)
 {
-  QVBoxLayout * layout = new QVBoxLayout (this);
+  ui.setupUi(this);
 
-  setWindowTitle (tr ("Torrent Properties"));
+  initInfoTab ();
+  initPeersTab ();
+  initTrackerTab ();
+  initFilesTab ();
+  initOptionsTab ();
 
-  QTabWidget * t = new QTabWidget (this);
-  QWidget * w;
-  t->addTab (w = createInfoTab (),      tr ("Information"));
-  myWidgets << w;
-  t->addTab (w = createPeersTab (),     tr ("Peers"));
-  myWidgets << w;
-  t->addTab (w = createTrackerTab (),   tr ("Tracker"));
-  myWidgets << w;
-  t->addTab (w = createFilesTab (),     tr ("Files"));
-  myWidgets << w;
-  t->addTab (w = createOptionsTab (),   tr ("Options"));
-  myWidgets << w;
-  layout->addWidget (t);
+  adjustSize ();
+  ui.commentBrowser->setMaximumHeight (QWIDGETSIZE_MAX);
 
-  QDialogButtonBox * buttons = new QDialogButtonBox (QDialogButtonBox::Close, Qt::Horizontal, this);
-  connect (buttons, SIGNAL (rejected ()), this, SLOT (close ()));
-  layout->addWidget (buttons);
-  QWidget::setAttribute (Qt::WA_DeleteOnClose, true);
+  setAttribute (Qt::WA_DeleteOnClose, true);
 
   QList<int> initKeys;
-  initKeys << Prefs :: SHOW_TRACKER_SCRAPES
-           << Prefs :: SHOW_BACKUP_TRACKERS;
+  initKeys << Prefs::SHOW_TRACKER_SCRAPES
+           << Prefs::SHOW_BACKUP_TRACKERS;
   foreach (int key, initKeys)
     refreshPref (key);
 
@@ -195,7 +209,7 @@ Details :: Details (Session       & session,
   myTimer.start (REFRESH_INTERVAL_MSEC);
 }
 
-Details :: ~Details ()
+Details::~Details ()
 {
   myTrackerDelegate->deleteLater ();
   myTrackerFilter->deleteLater ();
@@ -203,7 +217,7 @@ Details :: ~Details ()
 }
 
 void
-Details :: setIds (const QSet<int>& ids)
+Details::setIds (const QSet<int>& ids)
 {
   if (ids == myIds)
     return;
@@ -218,7 +232,7 @@ Details :: setIds (const QSet<int>& ids)
         disconnect (tor, SIGNAL (torrentChanged (int)), this, SLOT (onTorrentChanged ()));
     }
 
-  myFileTreeView->clear ();
+  ui.filesView->clear ();
   myIds = ids;
   myTrackerModel->refresh (myModel, myIds);
 
@@ -230,33 +244,33 @@ Details :: setIds (const QSet<int>& ids)
         connect (tor, SIGNAL (torrentChanged (int)), this, SLOT (onTorrentChanged ()));
     }
 
-  foreach (QWidget * w, myWidgets)
-    w->setEnabled (false);
+  for (int i = 0; i < ui.tabs->count (); ++i)
+    ui.tabs->widget (i)->setEnabled (false);
 
   onTimer ();
 }
 
 void
-Details :: refreshPref (int key)
+Details::refreshPref (int key)
 {
   QString str;
 
   switch (key)
     {
-      case Prefs :: SHOW_TRACKER_SCRAPES:
+      case Prefs::SHOW_TRACKER_SCRAPES:
         {
-          QItemSelectionModel * selectionModel (myTrackerView->selectionModel ());
+          QItemSelectionModel * selectionModel (ui.trackersView->selectionModel ());
           const QItemSelection selection (selectionModel->selection ());
           const QModelIndex currentIndex (selectionModel->currentIndex ());
           myTrackerDelegate->setShowMore (myPrefs.getBool (key));
           selectionModel->clear ();
-          myTrackerView->reset ();
+          ui.trackersView->reset ();
           selectionModel->select (selection, QItemSelectionModel::Select);
           selectionModel->setCurrentIndex (currentIndex, QItemSelectionModel::NoUpdate);
           break;
         }
 
-      case Prefs :: SHOW_BACKUP_TRACKERS:
+      case Prefs::SHOW_BACKUP_TRACKERS:
         myTrackerFilter->setShowBackupTrackers (myPrefs.getBool (key));
         break;
 
@@ -271,7 +285,7 @@ Details :: refreshPref (int key)
 ***/
 
 QString
-Details :: timeToStringRounded (int seconds)
+Details::timeToStringRounded (int seconds)
 {
   if (seconds > 60)
     seconds -= (seconds % 60);
@@ -280,13 +294,13 @@ Details :: timeToStringRounded (int seconds)
 }
 
 void
-Details :: onTimer ()
+Details::onTimer ()
 {
   getNewData ();
 }
 
 void
-Details :: getNewData ()
+Details::getNewData ()
 {
   if (!myIds.empty ())
     {
@@ -305,7 +319,7 @@ Details :: getNewData ()
 }
 
 void
-Details :: onTorrentChanged ()
+Details::onTorrentChanged ()
 {
   if (!myHavePendingRefresh)
     {
@@ -348,7 +362,7 @@ namespace
 }
 
 void
-Details :: refresh ()
+Details::refresh ()
 {
   const int n = myIds.size ();
   const bool single = n == 1;
@@ -403,23 +417,24 @@ Details :: refresh ()
       else
         string = torrents[0]->activityString ();
     }
-  myStateLabel->setText (string);
+  ui.stateValueLabel->setText (string);
   const QString stateString = string;
 
   // myHaveLabel
   double sizeWhenDone = 0;
-  double leftUntilDone = 0;
   double available = 0;
-  int64_t haveTotal = 0;
-  int64_t haveVerified = 0;
-  int64_t haveUnverified = 0;
-  int64_t verifiedPieces = 0;
   if (torrents.empty ())
     {
       string = none;
     }
   else
     {
+      double leftUntilDone = 0;
+      int64_t haveTotal = 0;
+      int64_t haveVerified = 0;
+      int64_t haveUnverified = 0;
+      int64_t verifiedPieces = 0;
+
       foreach (const Torrent * t, torrents)
         {
           if (t->hasMetadata ())
@@ -441,11 +456,17 @@ Details :: refresh ()
 
       if (!haveUnverified && !leftUntilDone)
         {
+          //: Text following the "Have:" label in torrent properties dialog;
+          //: %1 is amount of downloaded and verified data
           string = tr ("%1 (100%)")
                      .arg (Formatter::sizeToString (haveVerified));
         }
       else if (!haveUnverified)
         {
+          //: Text following the "Have:" label in torrent properties dialog;
+          //: %1 is amount of downloaded and verified data,
+          //: %2 is overall size of torrent data,
+          //: %3 is percentage (%1/%2*100)
           string = tr ("%1 of %2 (%3%)")
                      .arg (Formatter::sizeToString (haveVerified))
                      .arg (Formatter::sizeToString (sizeWhenDone))
@@ -453,6 +474,11 @@ Details :: refresh ()
         }
       else
         {
+          //: Text following the "Have:" label in torrent properties dialog;
+          //: %1 is amount of downloaded data (both verified and unverified),
+          //: %2 is overall size of torrent data,
+          //: %3 is percentage (%1/%2*100),
+          //: %4 is amount of downloaded but not yet verified data
           string = tr ("%1 of %2 (%3%), %4 Unverified")
                      .arg (Formatter::sizeToString (haveVerified + haveUnverified))
                      .arg (Formatter::sizeToString (sizeWhenDone))
@@ -460,7 +486,7 @@ Details :: refresh ()
                      .arg (Formatter::sizeToString (haveUnverified));
         }
     }
-  myHaveLabel->setText (string);
+  ui.haveValueLabel->setText (string);
 
   // myAvailabilityLabel
   if (torrents.empty ())
@@ -468,8 +494,8 @@ Details :: refresh ()
   else if (sizeWhenDone == 0)
     string = none;
   else
-    string = QString ("%1%").arg (Formatter::percentToString ( (100.0 * available) / sizeWhenDone));
-  myAvailabilityLabel->setText (string);
+    string = QString::fromLatin1 ("%1%").arg (Formatter::percentToString ( (100.0 * available) / sizeWhenDone));
+  ui.availabilityValueLabel->setText (string);
 
   // myDownloadedLabel
   if (torrents.empty ())
@@ -492,7 +518,7 @@ Details :: refresh ()
       else
         string = dstr;
     }
-  myDownloadedLabel->setText (string);
+  ui.downloadedValueLabel->setText (string);
 
   //  myUploadedLabel
   if (torrents.empty ())
@@ -512,7 +538,7 @@ Details :: refresh ()
                  .arg (Formatter::sizeToString (u))
                  .arg (Formatter::ratioToString (tr_getRatio (u, d)));
     }
-  myUploadedLabel->setText (string);
+  ui.uploadedValueLabel->setText (string);
 
   const QDateTime qdt_now = QDateTime::currentDateTime ();
 
@@ -540,7 +566,7 @@ Details :: refresh ()
       else
         string = Formatter::timeToString (baseline.secsTo (qdt_now));
     }
-  myRunTimeLabel->setText (string);
+  ui.runningTimeValueLabel->setText (string);
 
 
   // myETALabel
@@ -569,7 +595,7 @@ Details :: refresh ()
             string = Formatter::timeToString (baseline);
        }
     }
-  myETALabel->setText (string);
+  ui.remainingTimeValueLabel->setText (string);
 
 
   // myLastActivityLabel
@@ -595,7 +621,7 @@ Details :: refresh ()
       else
         string = tr ("%1 ago").arg (Formatter::timeToString (seconds));
     }
-  myLastActivityLabel->setText (string);
+  ui.lastActivityValueLabel->setText (string);
 
 
   if (torrents.empty ())
@@ -616,7 +642,7 @@ Details :: refresh ()
     }
   if (string.isEmpty ())
     string = none;
-  myErrorLabel->setText (string);
+  ui.errorValueLabel->setText (string);
 
 
   ///
@@ -651,7 +677,7 @@ Details :: refresh ()
         string = tr ("%1 (%Ln pieces)", "", pieces)
                    .arg (Formatter::sizeToString (size));
     }
-  mySizeLabel->setText (string);
+  ui.sizeValueLabel->setText (string);
 
   // myHashLabel
   string = none;
@@ -667,7 +693,7 @@ Details :: refresh ()
             }
         }
     }
-  myHashLabel->setText (string);
+  ui.hashValueLabel->setText (string);
 
   // myPrivacyLabel
   string = none;
@@ -685,10 +711,11 @@ Details :: refresh ()
             }
         }
     }
-  myPrivacyLabel->setText (string);
+  ui.privacyValueLabel->setText (string);
 
   // myCommentBrowser
   string = none;
+  bool isCommentMixed = false;
   if (!torrents.empty ())
     {
       string = torrents[0]->comment ();
@@ -697,15 +724,16 @@ Details :: refresh ()
           if (string != t->comment ())
             {
               string = mixed;
+              isCommentMixed = true;
               break;
             }
         }
     }
-  if (myCommentBrowser->toPlainText() != string)
+  if (ui.commentBrowser->toPlainText() != string)
     {
-      myCommentBrowser->setText (string);
-      myCommentBrowser->setMaximumHeight (QWIDGETSIZE_MAX);
+      ui.commentBrowser->setText (string);
     }
+  ui.commentBrowser->setEnabled (!isCommentMixed && !string.isEmpty ());
 
   // myOriginLabel
   string = none;
@@ -731,7 +759,7 @@ Details :: refresh ()
       else
         string = tr ("Created by %1 on %2").arg (creator).arg (date);
     }
-  myOriginLabel->setText (string);
+  ui.originValueLabel->setText (string);
 
   // myLocationLabel
   string = none;
@@ -747,7 +775,7 @@ Details :: refresh ()
             }
         }
     }
-  myLocationLabel->setText (string);
+  ui.locationValueLabel->setText (string);
 
 
   ///
@@ -767,33 +795,33 @@ Details :: refresh ()
       uniform = true;
       baselineFlag = baseline->honorsSessionLimits ();
       foreach (tor, torrents) if (baselineFlag != tor->honorsSessionLimits ()) { uniform = false; break; }
-      mySessionLimitCheck->setChecked (uniform && baselineFlag);
+      ui.sessionLimitCheck->setChecked (uniform && baselineFlag);
 
       // mySingleDownCheck
       uniform = true;
       baselineFlag = baseline->downloadIsLimited ();
       foreach (tor, torrents) if (baselineFlag != tor->downloadIsLimited ()) { uniform = false; break; }
-      mySingleDownCheck->setChecked (uniform && baselineFlag);
+      ui.singleDownCheck->setChecked (uniform && baselineFlag);
 
       // mySingleUpCheck
       uniform = true;
       baselineFlag = baseline->uploadIsLimited ();
       foreach (tor, torrents) if (baselineFlag != tor->uploadIsLimited ()) { uniform = false; break; }
-      mySingleUpCheck->setChecked (uniform && baselineFlag);
+      ui.singleUpCheck->setChecked (uniform && baselineFlag);
 
       // myBandwidthPriorityCombo
       uniform = true;
       baselineInt = baseline->getBandwidthPriority ();
       foreach (tor, torrents) if (baselineInt != tor->getBandwidthPriority ()) { uniform = false; break; }
       if (uniform)
-        i = myBandwidthPriorityCombo->findData (baselineInt);
+        i = ui.bandwidthPriorityCombo->findData (baselineInt);
       else
         i = -1;
-      setIfIdle (myBandwidthPriorityCombo, i);
+      setIfIdle (ui.bandwidthPriorityCombo, i);
 
-      setIfIdle (mySingleDownSpin, int (tor->downloadLimit ().KBps ()));
-      setIfIdle (mySingleUpSpin, int (tor->uploadLimit ().KBps ()));
-      setIfIdle (myPeerLimitSpin, tor->peerLimit ());
+      setIfIdle (ui.singleDownSpin, int (tor->downloadLimit ().KBps ()));
+      setIfIdle (ui.singleUpSpin, int (tor->uploadLimit ().KBps ()));
+      setIfIdle (ui.peerLimitSpin, tor->peerLimit ());
     }
 
   if (!torrents.empty ())
@@ -805,20 +833,21 @@ Details :: refresh ()
       int baselineInt = torrents[0]->seedRatioMode ();
       foreach (tor, torrents) if (baselineInt != tor->seedRatioMode ()) { uniform = false; break; }
 
-      setIfIdle (myRatioCombo, uniform ? myRatioCombo->findData (baselineInt) : -1);
-      myRatioSpin->setVisible (uniform && (baselineInt == TR_RATIOLIMIT_SINGLE));
+      setIfIdle (ui.ratioCombo, uniform ? ui.ratioCombo->findData (baselineInt) : -1);
+      ui.ratioSpin->setVisible (uniform && (baselineInt == TR_RATIOLIMIT_SINGLE));
 
-      setIfIdle (myRatioSpin, tor->seedRatioLimit ());
+      setIfIdle (ui.ratioSpin, tor->seedRatioLimit ());
 
       // idle
       uniform = true;
       baselineInt = torrents[0]->seedIdleMode ();
       foreach (tor, torrents) if (baselineInt != tor->seedIdleMode ()) { uniform = false; break; }
 
-      setIfIdle (myIdleCombo, uniform ? myIdleCombo->findData (baselineInt) : -1);
-      myIdleSpin->setVisible (uniform && (baselineInt == TR_RATIOLIMIT_SINGLE));
+      setIfIdle (ui.idleCombo, uniform ? ui.idleCombo->findData (baselineInt) : -1);
+      ui.idleSpin->setVisible (uniform && (baselineInt == TR_RATIOLIMIT_SINGLE));
 
-      setIfIdle (myIdleSpin, tor->seedIdleLimit ());
+      setIfIdle (ui.idleSpin, tor->seedIdleLimit ());
+      onIdleLimitChanged ();
     }
 
   ///
@@ -840,19 +869,19 @@ Details :: refresh ()
 
       foreach (const Peer& peer, peers)
         {
-          const QString key = idStr + ":" + peer.address;
-          PeerItem * item = (PeerItem*) myPeers.value (key, 0);
+          const QString key = idStr + QLatin1Char (':') + peer.address;
+          PeerItem * item = static_cast<PeerItem*> (myPeers.value (key, 0));
 
           if (item == 0) // new peer has connected
             {
-              static const QIcon myEncryptionIcon (":/icons/encrypted.png");
+              static const QIcon myEncryptionIcon (QLatin1String (":/icons/encrypted.png"));
               static const QIcon myEmptyIcon;
               item = new PeerItem (peer);
               item->setTextAlignment (COL_UP, Qt::AlignRight|Qt::AlignVCenter);
               item->setTextAlignment (COL_DOWN, Qt::AlignRight|Qt::AlignVCenter);
               item->setTextAlignment (COL_PERCENT, Qt::AlignRight|Qt::AlignVCenter);
               item->setIcon (COL_LOCK, peer.isEncrypted ? myEncryptionIcon : myEmptyIcon);
-              item->setToolTip (COL_LOCK, peer.isEncrypted ? tr ("Encrypted connection") : "");
+              item->setToolTip (COL_LOCK, peer.isEncrypted ? tr ("Encrypted connection") : QString ());
               item->setText (COL_ADDRESS, peer.address);
               item->setText (COL_CLIENT, peer.clientName);
               newItems << item;
@@ -883,15 +912,15 @@ Details :: refresh ()
                 }
 
               if (!txt.isEmpty ())
-                codeTip += QString ("%1: %2\n").arg (ch).arg (txt);
+                codeTip += QString::fromLatin1 ("%1: %2\n").arg (ch).arg (txt);
             }
 
           if (!codeTip.isEmpty ())
             codeTip.resize (codeTip.size ()-1); // eat the trailing linefeed
 
-          item->setText (COL_UP, peer.rateToPeer.isZero () ? "" : Formatter::speedToString (peer.rateToPeer));
-          item->setText (COL_DOWN, peer.rateToClient.isZero () ? "" : Formatter::speedToString (peer.rateToClient));
-          item->setText (COL_PERCENT, peer.progress > 0 ? QString ("%1%").arg ( (int) (peer.progress * 100.0)) : "");
+          item->setText (COL_UP, peer.rateToPeer.isZero () ? QString () : Formatter::speedToString (peer.rateToPeer));
+          item->setText (COL_DOWN, peer.rateToClient.isZero () ? QString () : Formatter::speedToString (peer.rateToClient));
+          item->setText (COL_PERCENT, peer.progress > 0 ? QString::fromLatin1 ("%1%").arg ( (int) (peer.progress * 100.0)) : QString ());
           item->setText (COL_STATUS, code);
           item->setToolTip (COL_STATUS, codeTip);
 
@@ -899,73 +928,27 @@ Details :: refresh ()
         }
     }
 
-  myPeerTree->addTopLevelItems (newItems);
+  ui.peersView->addTopLevelItems (newItems);
   foreach (QString key, myPeers.keys ())
     {
       if (!peers2.contains (key)) // old peer has disconnected
         {
           QTreeWidgetItem * item = myPeers.value (key, 0);
-          myPeerTree->takeTopLevelItem (myPeerTree->indexOfTopLevelItem (item));
+          ui.peersView->takeTopLevelItem (ui.peersView->indexOfTopLevelItem (item));
           delete item;
         }
     }
   myPeers = peers2;
 
   if (!single)
-    myFileTreeView->clear ();
+    ui.filesView->clear ();
   if (single)
-    myFileTreeView->update (torrents[0]->files (), myChangedTorrents);
+    ui.filesView->update (torrents[0]->files (), myChangedTorrents);
 
   myChangedTorrents = false;
   myHavePendingRefresh = false;
-  foreach (QWidget * w, myWidgets)
-    w->setEnabled (true);
-}
-
-void
-Details :: enableWhenChecked (QCheckBox * box, QWidget * w)
-{
-  connect (box, SIGNAL (toggled (bool)), w, SLOT (setEnabled (bool)));
-  w->setEnabled (box->isChecked ());
-}
-
-
-/***
-****
-***/
-
-QWidget *
-Details :: createInfoTab ()
-{
-  HIG * hig = new HIG (this);
-
-  hig->addSectionTitle (tr ("Activity"));
-  hig->addRow (tr ("Have:"), myHaveLabel = new SqueezeLabel);
-  hig->addRow (tr ("Availability:"), myAvailabilityLabel = new SqueezeLabel);
-  hig->addRow (tr ("Uploaded:"), myUploadedLabel = new SqueezeLabel);
-  hig->addRow (tr ("Downloaded:"), myDownloadedLabel = new SqueezeLabel);
-  hig->addRow (tr ("State:"), myStateLabel = new SqueezeLabel);
-  hig->addRow (tr ("Running time:"), myRunTimeLabel = new SqueezeLabel);
-  hig->addRow (tr ("Remaining time:"), myETALabel = new SqueezeLabel);
-  hig->addRow (tr ("Last activity:"), myLastActivityLabel = new SqueezeLabel);
-  hig->addRow (tr ("Error:"), myErrorLabel = new SqueezeLabel);
-  hig->addSectionDivider ();
-
-  hig->addSectionDivider ();
-  hig->addSectionTitle (tr ("Details"));
-  hig->addRow (tr ("Size:"), mySizeLabel = new SqueezeLabel);
-  hig->addRow (tr ("Location:"), myLocationLabel = new SqueezeLabel);
-  hig->addRow (tr ("Hash:"), myHashLabel = new SqueezeLabel);
-  hig->addRow (tr ("Privacy:"), myPrivacyLabel = new SqueezeLabel);
-  hig->addRow (tr ("Origin:"), myOriginLabel = new SqueezeLabel);
-  myOriginLabel->setMinimumWidth (325); // stop long origin strings from resizing the widgit
-  hig->addRow (tr ("Comment:"), myCommentBrowser = new QTextBrowser);
-  const int h = QFontMetrics (myCommentBrowser->font ()).lineSpacing () * 4;
-  myCommentBrowser->setFixedHeight (h);
-
-  hig->finish ();
-
-  return hig;
+  for (int i = 0; i < ui.tabs->count (); ++i)
+    ui.tabs->widget (i)->setEnabled (true);
 }
 
 /***
@@ -973,31 +956,47 @@ Details :: createInfoTab ()
 ***/
 
 void
-Details :: onShowTrackerScrapesToggled (bool val)
+Details::initInfoTab ()
+{
+  const int h = QFontMetrics (ui.commentBrowser->font ()).lineSpacing () * 4;
+  ui.commentBrowser->setFixedHeight (h);
+
+  ColumnResizer * cr (new ColumnResizer (this));
+  cr->addLayout (ui.activitySectionLayout);
+  cr->addLayout (ui.detailsSectionLayout);
+  cr->update ();
+}
+
+/***
+****
+***/
+
+void
+Details::onShowTrackerScrapesToggled (bool val)
 {
   myPrefs.set (Prefs::SHOW_TRACKER_SCRAPES, val);
 }
 
 void
-Details :: onShowBackupTrackersToggled (bool val)
+Details::onShowBackupTrackersToggled (bool val)
 {
   myPrefs.set (Prefs::SHOW_BACKUP_TRACKERS, val);
 }
 
 void
-Details :: onHonorsSessionLimitsToggled (bool val)
+Details::onHonorsSessionLimitsToggled (bool val)
 {
   mySession.torrentSet (myIds, TR_KEY_honorsSessionLimits, val);
   getNewData ();
 }
 void
-Details :: onDownloadLimitedToggled (bool val)
+Details::onDownloadLimitedToggled (bool val)
 {
   mySession.torrentSet (myIds, TR_KEY_downloadLimited, val);
   getNewData ();
 }
 void
-Details :: onSpinBoxEditingFinished ()
+Details::onSpinBoxEditingFinished ()
 {
   const QObject * spin = sender ();
   const tr_quark key = spin->property (PREF_KEY).toInt ();
@@ -1010,48 +1009,57 @@ Details :: onSpinBoxEditingFinished ()
 }
 
 void
-Details :: onUploadLimitedToggled (bool val)
+Details::onUploadLimitedToggled (bool val)
 {
   mySession.torrentSet (myIds, TR_KEY_uploadLimited, val);
   getNewData ();
 }
 
 void
-Details :: onIdleModeChanged (int index)
+Details::onIdleModeChanged (int index)
 {
-  const int val = myIdleCombo->itemData (index).toInt ();
+  const int val = ui.idleCombo->itemData (index).toInt ();
   mySession.torrentSet (myIds, TR_KEY_seedIdleMode, val);
   getNewData ();
 }
 
 void
-Details :: onRatioModeChanged (int index)
+Details::onIdleLimitChanged ()
 {
-  const int val = myRatioCombo->itemData (index).toInt ();
+  //: Spin box suffix, "Stop seeding if idle for: [ 5 minutes ]" (includes leading space after the number, if needed)
+  const QString unitsSuffix = tr (" minute(s)", 0, ui.idleSpin->value ());
+  if (ui.idleSpin->suffix () != unitsSuffix)
+    ui.idleSpin->setSuffix (unitsSuffix);
+}
+
+void
+Details::onRatioModeChanged (int index)
+{
+  const int val = ui.ratioCombo->itemData (index).toInt ();
   mySession.torrentSet (myIds, TR_KEY_seedRatioMode, val);
 }
 
 void
-Details :: onBandwidthPriorityChanged (int index)
+Details::onBandwidthPriorityChanged (int index)
 {
   if (index != -1)
     {
-      const int priority = myBandwidthPriorityCombo->itemData (index).toInt ();
+      const int priority = ui.bandwidthPriorityCombo->itemData (index).toInt ();
       mySession.torrentSet (myIds, TR_KEY_bandwidthPriority, priority);
       getNewData ();
     }
 }
 
 void
-Details :: onTrackerSelectionChanged ()
+Details::onTrackerSelectionChanged ()
 {
-  const int selectionCount = myTrackerView->selectionModel ()->selectedRows ().size ();
-  myEditTrackerButton->setEnabled (selectionCount == 1);
-  myRemoveTrackerButton->setEnabled (selectionCount > 0);
+  const int selectionCount = ui.trackersView->selectionModel ()->selectedRows ().size ();
+  ui.editTrackerButton->setEnabled (selectionCount == 1);
+  ui.removeTrackerButton->setEnabled (selectionCount > 0);
 }
 
 void
-Details :: onAddTrackerClicked ()
+Details::onAddTrackerClicked ()
 {
   bool ok = false;
   const QString url = QInputDialog::getText (this,
@@ -1089,13 +1097,13 @@ Details :: onAddTrackerClicked ()
 }
 
 void
-Details :: onEditTrackerClicked ()
+Details::onEditTrackerClicked ()
 {
-  QItemSelectionModel * selectionModel = myTrackerView->selectionModel ();
+  QItemSelectionModel * selectionModel = ui.trackersView->selectionModel ();
   QModelIndexList selectedRows = selectionModel->selectedRows ();
   assert (selectedRows.size () == 1);
   QModelIndex i = selectionModel->currentIndex ();
-  const TrackerInfo trackerInfo = myTrackerView->model ()->data (i, TrackerModel::TrackerRole).value<TrackerInfo> ();
+  const TrackerInfo trackerInfo = ui.trackersView->model ()->data (i, TrackerModel::TrackerRole).value<TrackerInfo> ();
 
   bool ok = false;
   const QString newval = QInputDialog::getText (this,
@@ -1125,15 +1133,15 @@ Details :: onEditTrackerClicked ()
 }
 
 void
-Details :: onRemoveTrackerClicked ()
+Details::onRemoveTrackerClicked ()
 {
   // make a map of torrentIds to announce URLs to remove
-  QItemSelectionModel * selectionModel = myTrackerView->selectionModel ();
+  QItemSelectionModel * selectionModel = ui.trackersView->selectionModel ();
   QModelIndexList selectedRows = selectionModel->selectedRows ();
   QMap<int,int> torrentId_to_trackerIds;
   foreach (QModelIndex i, selectedRows)
     {
-      const TrackerInfo inf = myTrackerView->model ()->data (i, TrackerModel::TrackerRole).value<TrackerInfo> ();
+      const TrackerInfo inf = ui.trackersView->model ()->data (i, TrackerModel::TrackerRole).value<TrackerInfo> ();
       torrentId_to_trackerIds.insertMulti (inf.torrentId, inf.st.id);
     }
 
@@ -1149,257 +1157,122 @@ Details :: onRemoveTrackerClicked ()
   getNewData ();
 }
 
-QWidget *
-Details :: createOptionsTab ()
+void
+Details::initOptionsTab ()
 {
-  QSpinBox * s;
-  QCheckBox * c;
-  QComboBox * m;
-  QHBoxLayout * h;
-  QDoubleSpinBox * ds;
   const QString speed_K_str = Formatter::unitStr (Formatter::SPEED, Formatter::KB);
 
-  HIG * hig = new HIG (this);
-  hig->addSectionTitle (tr ("Speed"));
+  ui.singleDownSpin->setSuffix (QString::fromLatin1 (" %1").arg (speed_K_str));
+  ui.singleUpSpin->setSuffix (QString::fromLatin1 (" %1").arg (speed_K_str));
 
-  c = new QCheckBox (tr ("Honor global &limits"));
-  mySessionLimitCheck = c;
-  hig->addWideControl (c);
-  connect (c, SIGNAL (clicked (bool)), this, SLOT (onHonorsSessionLimitsToggled (bool)));
+  ui.singleDownSpin->setProperty (PREF_KEY, TR_KEY_downloadLimit);
+  ui.singleUpSpin->setProperty (PREF_KEY, TR_KEY_uploadLimit);
+  ui.ratioSpin->setProperty (PREF_KEY, TR_KEY_seedRatioLimit);
+  ui.idleSpin->setProperty (PREF_KEY, TR_KEY_seedIdleLimit);
+  ui.peerLimitSpin->setProperty (PREF_KEY, TR_KEY_peer_limit);
 
-  c = new QCheckBox (tr ("Limit &download speed (%1):").arg (speed_K_str));
-  mySingleDownCheck = c;
-  s = new QSpinBox ();
-  s->setProperty (PREF_KEY, TR_KEY_downloadLimit);
-  s->setSingleStep (5);
-  s->setRange (0, INT_MAX);
-  mySingleDownSpin = s;
-  hig->addRow (c, s);
-  enableWhenChecked (c, s);
-  connect (c, SIGNAL (clicked (bool)), this, SLOT (onDownloadLimitedToggled (bool)));
-  connect (s, SIGNAL (editingFinished ()), this, SLOT (onSpinBoxEditingFinished ()));
+  ui.bandwidthPriorityCombo->addItem (tr ("High"),   TR_PRI_HIGH);
+  ui.bandwidthPriorityCombo->addItem (tr ("Normal"), TR_PRI_NORMAL);
+  ui.bandwidthPriorityCombo->addItem (tr ("Low"),    TR_PRI_LOW);
 
-  c = new QCheckBox (tr ("Limit &upload speed (%1):").arg (speed_K_str));
-  mySingleUpCheck = c;
-  s = new QSpinBox ();
-  s->setSingleStep (5);
-  s->setRange (0, INT_MAX);
-  s->setProperty (PREF_KEY, TR_KEY_uploadLimit);
-  mySingleUpSpin = s;
-  hig->addRow (c, s);
-  enableWhenChecked (c, s);
-  connect (c, SIGNAL (clicked (bool)), this, SLOT (onUploadLimitedToggled (bool)));
-  connect (s, SIGNAL (editingFinished ()), this, SLOT (onSpinBoxEditingFinished ()));
+  ui.ratioCombo->addItem (tr ("Use Global Settings"),      TR_RATIOLIMIT_GLOBAL);
+  ui.ratioCombo->addItem (tr ("Seed regardless of ratio"), TR_RATIOLIMIT_UNLIMITED);
+  ui.ratioCombo->addItem (tr ("Stop seeding at ratio:"),   TR_RATIOLIMIT_SINGLE);
 
-  m = new QComboBox;
-  m->addItem (tr ("High"),   TR_PRI_HIGH);
-  m->addItem (tr ("Normal"), TR_PRI_NORMAL);
-  m->addItem (tr ("Low"),    TR_PRI_LOW);
-  connect (m, SIGNAL (currentIndexChanged (int)), this, SLOT (onBandwidthPriorityChanged (int)));
-  hig->addRow (tr ("Torrent &priority:"), m);
-  myBandwidthPriorityCombo = m;
+  ui.idleCombo->addItem (tr ("Use Global Settings"),         TR_IDLELIMIT_GLOBAL);
+  ui.idleCombo->addItem (tr ("Seed regardless of activity"), TR_IDLELIMIT_UNLIMITED);
+  ui.idleCombo->addItem (tr ("Stop seeding if idle for:"),   TR_IDLELIMIT_SINGLE);
 
-  hig->addSectionDivider ();
-  hig->addSectionTitle (tr ("Seeding Limits"));
+  ColumnResizer * cr (new ColumnResizer (this));
+  cr->addLayout (ui.speedSectionLayout);
+  cr->addLayout (ui.seedingLimitsSectionRatioLayout);
+  cr->addLayout (ui.seedingLimitsSectionIdleLayout);
+  cr->addLayout (ui.peerConnectionsSectionLayout);
+  cr->update ();
 
-  h = new QHBoxLayout ();
-  h->setSpacing (HIG :: PAD);
-  m = new QComboBox;
-  m->addItem (tr ("Use Global Settings"),      TR_RATIOLIMIT_GLOBAL);
-  m->addItem (tr ("Seed regardless of ratio"), TR_RATIOLIMIT_UNLIMITED);
-  m->addItem (tr ("Stop seeding at ratio:"),   TR_RATIOLIMIT_SINGLE);
-  connect (m, SIGNAL (currentIndexChanged (int)), this, SLOT (onRatioModeChanged (int)));
-  h->addWidget (myRatioCombo = m);
-  ds = new QDoubleSpinBox ();
-  ds->setRange (0.5, INT_MAX);
-  ds->setProperty (PREF_KEY, TR_KEY_seedRatioLimit);
-  connect (ds, SIGNAL (editingFinished ()), this, SLOT (onSpinBoxEditingFinished ()));
-  h->addWidget (myRatioSpin = ds);
-  hig->addRow (tr ("&Ratio:"), h, m);
-
-  h = new QHBoxLayout ();
-  h->setSpacing (HIG :: PAD);
-  m = new QComboBox;
-  m->addItem (tr ("Use Global Settings"),                 TR_IDLELIMIT_GLOBAL);
-  m->addItem (tr ("Seed regardless of activity"),         TR_IDLELIMIT_UNLIMITED);
-  m->addItem (tr ("Stop seeding if idle for N minutes:"), TR_IDLELIMIT_SINGLE);
-  connect (m, SIGNAL (currentIndexChanged (int)), this, SLOT (onIdleModeChanged (int)));
-  h->addWidget (myIdleCombo = m);
-  s = new QSpinBox ();
-  s->setSingleStep (5);
-  s->setRange (1, 9999);
-  s->setProperty (PREF_KEY, TR_KEY_seedIdleLimit);
-  connect (s, SIGNAL (editingFinished ()), this, SLOT (onSpinBoxEditingFinished ()));
-  h->addWidget (myIdleSpin = s);
-  hig->addRow (tr ("&Idle:"), h, m);
-
-
-  hig->addSectionDivider ();
-  hig->addSectionTitle (tr ("Peer Connections"));
-
-  s = new QSpinBox ();
-  s->setSingleStep (5);
-  s->setRange (1, 300);
-  s->setProperty (PREF_KEY, TR_KEY_peer_limit);
-  connect (s, SIGNAL (editingFinished ()), this, SLOT (onSpinBoxEditingFinished ()));
-  myPeerLimitSpin = s;
-  hig->addRow (tr ("&Maximum peers:"), s);
-
-  hig->finish ();
-
-  return hig;
+  connect (ui.sessionLimitCheck, SIGNAL (clicked (bool)), SLOT (onHonorsSessionLimitsToggled (bool)));
+  connect (ui.singleDownCheck, SIGNAL (clicked (bool)), SLOT (onDownloadLimitedToggled (bool)));
+  connect (ui.singleDownSpin, SIGNAL (editingFinished ()), SLOT (onSpinBoxEditingFinished ()));
+  connect (ui.singleUpCheck, SIGNAL (clicked (bool)), SLOT (onUploadLimitedToggled (bool)));
+  connect (ui.singleUpSpin, SIGNAL (editingFinished ()), SLOT (onSpinBoxEditingFinished ()));
+  connect (ui.bandwidthPriorityCombo, SIGNAL (currentIndexChanged (int)), SLOT (onBandwidthPriorityChanged (int)));
+  connect (ui.ratioCombo, SIGNAL (currentIndexChanged (int)), SLOT (onRatioModeChanged (int)));
+  connect (ui.ratioSpin, SIGNAL (editingFinished ()), SLOT (onSpinBoxEditingFinished ()));
+  connect (ui.idleCombo, SIGNAL (currentIndexChanged (int)), SLOT (onIdleModeChanged (int)));
+  connect (ui.idleSpin, SIGNAL (editingFinished ()), SLOT (onSpinBoxEditingFinished ()));
+  connect (ui.idleSpin, SIGNAL (valueChanged (int)), SLOT (onIdleLimitChanged ()));
+  connect (ui.peerLimitSpin, SIGNAL (editingFinished ()), SLOT (onSpinBoxEditingFinished ()));
 }
 
 /***
 ****
 ***/
 
-QWidget *
-Details :: createTrackerTab ()
+void
+Details::initTrackerTab ()
 {
-  QCheckBox * c;
-  QPushButton * p;
-  QWidget * top = new QWidget;
-  QVBoxLayout * v = new QVBoxLayout (top);
-  QHBoxLayout * h = new QHBoxLayout ();
-  QVBoxLayout * v2 = new QVBoxLayout ();
-
-  v->setSpacing (HIG::PAD_BIG);
-  v->setContentsMargins (HIG::PAD_BIG, HIG::PAD_BIG, HIG::PAD_BIG, HIG::PAD_BIG);
-
-  h->setSpacing (HIG::PAD);
-  h->setContentsMargins (HIG::PAD_SMALL, HIG::PAD_SMALL, HIG::PAD_SMALL, HIG::PAD_SMALL);
-
-  v2->setSpacing (HIG::PAD);
-
-  myTrackerModel = new TrackerModel;
-  myTrackerFilter = new TrackerModelFilter;
+  myTrackerModel = new TrackerModel ();
+  myTrackerFilter = new TrackerModelFilter ();
   myTrackerFilter->setSourceModel (myTrackerModel);
-  myTrackerView = new QTreeView;
-  myTrackerView->setModel (myTrackerFilter);
-  myTrackerView->setHeaderHidden (true);
-  myTrackerView->setSelectionMode (QTreeWidget::ExtendedSelection);
-  myTrackerView->setRootIsDecorated (false);
-  myTrackerView->setIndentation (2);
-  myTrackerView->setItemsExpandable (false);
-  myTrackerView->setAlternatingRowColors (true);
-  myTrackerView->setItemDelegate (myTrackerDelegate = new TrackerDelegate ());
-  connect (myTrackerView->selectionModel (), SIGNAL (selectionChanged (const QItemSelection&, const QItemSelection&)), this, SLOT (onTrackerSelectionChanged ()));
-  h->addWidget (myTrackerView, 1);
+  myTrackerDelegate = new TrackerDelegate ();
 
-  p = new QPushButton ();
-  p->setIcon (getStockIcon ("list-add", QStyle::SP_DialogOpenButton));
-  p->setToolTip (tr ("Add Tracker"));
-  myAddTrackerButton = p;
-  v2->addWidget (p, 1);
-  connect (p, SIGNAL (clicked (bool)), this, SLOT (onAddTrackerClicked ()));
+  ui.trackersView->setModel (myTrackerFilter);
+  ui.trackersView->setItemDelegate (myTrackerDelegate);
 
-  p = new QPushButton ();
-  p->setIcon (getStockIcon ("document-properties", QStyle::SP_DesktopIcon));
-  p->setToolTip (tr ("Edit Tracker"));
-  myAddTrackerButton = p;
-  p->setEnabled (false);
-  myEditTrackerButton = p;
-  v2->addWidget (p, 1);
-  connect (p, SIGNAL (clicked (bool)), this, SLOT (onEditTrackerClicked ()));
+  ui.addTrackerButton->setIcon (getStockIcon (QLatin1String ("list-add"), QStyle::SP_DialogOpenButton));
+  ui.editTrackerButton->setIcon (getStockIcon (QLatin1String ("document-properties"), QStyle::SP_DesktopIcon));
+  ui.removeTrackerButton->setIcon (getStockIcon (QLatin1String ("list-remove"), QStyle::SP_TrashIcon));
 
-  p = new QPushButton ();
-  p->setIcon (getStockIcon ("list-remove", QStyle::SP_TrashIcon));
-  p->setToolTip (tr ("Remove Trackers"));
-  p->setEnabled (false);
-  myRemoveTrackerButton = p;
-  v2->addWidget (p, 1);
-  connect (p, SIGNAL (clicked (bool)), this, SLOT (onRemoveTrackerClicked ()));
+  ui.showTrackerScrapesCheck->setChecked (myPrefs.getBool (Prefs::SHOW_TRACKER_SCRAPES));
+  ui.showBackupTrackersCheck->setChecked (myPrefs.getBool (Prefs::SHOW_BACKUP_TRACKERS));
 
-  v2->addStretch (1);
+  connect (ui.trackersView->selectionModel (), SIGNAL (selectionChanged (QItemSelection, QItemSelection)),
+    SLOT (onTrackerSelectionChanged ()));
+  connect (ui.addTrackerButton, SIGNAL (clicked ()), SLOT (onAddTrackerClicked ()));
+  connect (ui.editTrackerButton, SIGNAL (clicked ()), SLOT (onEditTrackerClicked ()));
+  connect (ui.removeTrackerButton, SIGNAL (clicked ()), SLOT (onRemoveTrackerClicked ()));
+  connect (ui.showTrackerScrapesCheck, SIGNAL (clicked (bool)), SLOT (onShowTrackerScrapesToggled (bool)));
+  connect (ui.showBackupTrackersCheck, SIGNAL (clicked (bool)), SLOT (onShowBackupTrackersToggled (bool)));
 
-  h->addLayout (v2, 1);
-  h->setStretch (1, 0);
-
-  v->addLayout (h, 1);
-
-  c = new QCheckBox (tr ("Show &more details"));
-  c->setChecked (myPrefs.getBool (Prefs::SHOW_TRACKER_SCRAPES));
-  myShowTrackerScrapesCheck = c;
-  v->addWidget (c, 1);
-  connect (c, SIGNAL (clicked (bool)), this, SLOT (onShowTrackerScrapesToggled (bool)));
-
-  c = new QCheckBox (tr ("Show &backup trackers"));
-  c->setChecked (myPrefs.getBool (Prefs::SHOW_BACKUP_TRACKERS));
-  myShowBackupTrackersCheck = c;
-  v->addWidget (c, 1);
-  connect (c, SIGNAL (clicked (bool)), this, SLOT (onShowBackupTrackersToggled (bool)));
-
-  return top;
+  onTrackerSelectionChanged ();
 }
 
 /***
 ****
 ***/
 
-QWidget *
-Details :: createPeersTab ()
+void
+Details::initPeersTab ()
 {
-  QWidget * top = new QWidget;
-  QVBoxLayout * v = new QVBoxLayout (top);
-  v->setSpacing (HIG :: PAD_BIG);
-  v->setContentsMargins (HIG::PAD_BIG, HIG::PAD_BIG, HIG::PAD_BIG, HIG::PAD_BIG);
-
   QStringList headers;
   headers << QString () << tr ("Up") << tr ("Down") << tr ("%") << tr ("Status") << tr ("Address") << tr ("Client");
-  myPeerTree = new QTreeWidget;
-  myPeerTree->setUniformRowHeights (true);
-  myPeerTree->setHeaderLabels (headers);
-  myPeerTree->setColumnWidth (0, 20);
-  myPeerTree->setSortingEnabled (true);
-  myPeerTree->sortByColumn (COL_ADDRESS, Qt::AscendingOrder);
-  myPeerTree->setRootIsDecorated (false);
-  myPeerTree->setTextElideMode (Qt::ElideRight);
-  v->addWidget (myPeerTree, 1);
 
-  const QFontMetrics m (font ());
-  QSize size = m.size (0, "1024 MiB/s");
-  myPeerTree->setColumnWidth (COL_UP, size.width ());
-  myPeerTree->setColumnWidth (COL_DOWN, size.width ());
-  size = m.size (0, " 100% ");
-  myPeerTree->setColumnWidth (COL_PERCENT, size.width ());
-  size = m.size (0, "ODUK?EXI");
-  myPeerTree->setColumnWidth (COL_STATUS, size.width ());
-  size = m.size (0, "888.888.888.888");
-  myPeerTree->setColumnWidth (COL_ADDRESS, size.width ());
-  size = m.size (0, "Some BitTorrent Client");
-  myPeerTree->setColumnWidth (COL_CLIENT, size.width ());
-  myPeerTree->setAlternatingRowColors (true);
+  ui.peersView->setHeaderLabels (headers);
+  ui.peersView->sortByColumn (COL_ADDRESS, Qt::AscendingOrder);
 
-  return top;
+  ui.peersView->setColumnWidth (COL_LOCK, 20);
+  ui.peersView->setColumnWidth (COL_UP, measureViewItem (ui.peersView, QLatin1String ("1024 MiB/s")));
+  ui.peersView->setColumnWidth (COL_DOWN, measureViewItem (ui.peersView, QLatin1String ("1024 MiB/s")));
+  ui.peersView->setColumnWidth (COL_PERCENT, measureViewItem (ui.peersView, QLatin1String ("100%")));
+  ui.peersView->setColumnWidth (COL_STATUS, measureViewItem (ui.peersView, QLatin1String ("ODUK?EXI")));
+  ui.peersView->setColumnWidth (COL_ADDRESS, measureViewItem (ui.peersView, QLatin1String ("888.888.888.888")));
 }
 
 /***
 ****
 ***/
 
-QWidget *
-Details :: createFilesTab ()
+void
+Details::initFilesTab ()
 {
-  myFileTreeView = new FileTreeView ();
-
-  connect (myFileTreeView, SIGNAL (     priorityChanged (const QSet<int>&, int)),
-           this,           SLOT ( onFilePriorityChanged (const QSet<int>&, int)));
-
-  connect (myFileTreeView, SIGNAL (     wantedChanged (const QSet<int>&, bool)),
-           this,           SLOT ( onFileWantedChanged (const QSet<int>&, bool)));
-
-  connect (myFileTreeView, SIGNAL (pathEdited (const QString&, const QString&)),
-           this,           SLOT (onPathEdited (const QString&, const QString&)));
-
-  connect (myFileTreeView, SIGNAL (openRequested (const QString&)),
-           this,           SLOT (onOpenRequested (const QString&)));
-
-  return myFileTreeView;
+  connect (ui.filesView, SIGNAL (priorityChanged (QSet<int>, int)), SLOT (onFilePriorityChanged (QSet<int>, int)));
+  connect (ui.filesView, SIGNAL (wantedChanged (QSet<int>, bool)), SLOT (onFileWantedChanged (QSet<int>, bool)));
+  connect (ui.filesView, SIGNAL (pathEdited (QString, QString)), SLOT (onPathEdited (QString, QString)));
+  connect (ui.filesView, SIGNAL (openRequested (QString)), SLOT (onOpenRequested (QString)));
 }
 
 void
-Details :: onFilePriorityChanged (const QSet<int>& indices, int priority)
+Details::onFilePriorityChanged (const QSet<int>& indices, int priority)
 {
   tr_quark key;
 
@@ -1423,7 +1296,7 @@ Details :: onFilePriorityChanged (const QSet<int>& indices, int priority)
 }
 
 void
-Details :: onFileWantedChanged (const QSet<int>& indices, bool wanted)
+Details::onFileWantedChanged (const QSet<int>& indices, bool wanted)
 {
   const tr_quark key = wanted ? TR_KEY_files_wanted : TR_KEY_files_unwanted;
   mySession.torrentSet (myIds, key, indices.toList ());
@@ -1431,13 +1304,13 @@ Details :: onFileWantedChanged (const QSet<int>& indices, bool wanted)
 }
 
 void
-Details :: onPathEdited (const QString& oldpath, const QString& newname)
+Details::onPathEdited (const QString& oldpath, const QString& newname)
 {
   mySession.torrentRenamePath (myIds, oldpath, newname);
 }
 
 void
-Details :: onOpenRequested (const QString& path)
+Details::onOpenRequested (const QString& path)
 {
   if (!mySession.isLocal ())
     return;
@@ -1448,7 +1321,7 @@ Details :: onOpenRequested (const QString& path)
       if (tor == NULL)
         continue;
 
-      const QString localFilePath = tor->getPath () + "/" + path;
+      const QString localFilePath = tor->getPath () + QLatin1Char ('/') + path;
       if (!QFile::exists (localFilePath))
         continue;
 

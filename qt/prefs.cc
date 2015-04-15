@@ -1,10 +1,10 @@
 /*
  * This file Copyright (C) 2009-2014 Mnemosyne LLC
  *
- * It may be used under the GNU Public License v2 or v3 licenses,
+ * It may be used under the GNU GPL versions 2 or 3
  * or any future license endorsed by Mnemosyne LLC.
  *
- * $Id$
+ * $Id: prefs.cc 14491 2015-04-11 10:51:59Z mikedld $
  */
 
 #include <cassert>
@@ -125,8 +125,8 @@ Prefs::PrefItem Prefs::myItems[] =
 ****
 ***/
 
-Prefs :: Prefs (const char * configDir):
-  myConfigDir (QString::fromUtf8 (configDir))
+Prefs::Prefs (const QString& configDir):
+  myConfigDir (configDir)
 {
   assert (sizeof(myItems) / sizeof(myItems[0]) == PREFS_COUNT);
 
@@ -142,7 +142,7 @@ Prefs :: Prefs (const char * configDir):
   tr_variant top;
   tr_variantInitDict (&top, 0);
   initDefaults (&top);
-  tr_sessionLoadSettings (&top, configDir, NULL);
+  tr_sessionLoadSettings (&top, myConfigDir.toUtf8 ().constData (), NULL);
 
   for (int i=0; i<PREFS_COUNT; ++i)
     {
@@ -157,17 +157,17 @@ Prefs :: Prefs (const char * configDir):
         {
           case QVariant::Int:
             if (tr_variantGetInt (b, &intVal))
-              myValues[i].setValue (qlonglong(intVal));
+              myValues[i].setValue (static_cast<qlonglong> (intVal));
             break;
 
           case TrTypes::SortModeType:
             if (tr_variantGetStr (b, &str, NULL))
-              myValues[i] = QVariant::fromValue (SortMode (str));
+              myValues[i] = QVariant::fromValue (SortMode (QString::fromUtf8 (str)));
             break;
 
           case TrTypes::FilterModeType:
             if (tr_variantGetStr (b, &str, NULL))
-              myValues[i] = QVariant::fromValue (FilterMode (str));
+              myValues[i] = QVariant::fromValue (FilterMode (QString::fromUtf8 (str)));
             break;
 
           case QVariant::String:
@@ -177,7 +177,7 @@ Prefs :: Prefs (const char * configDir):
 
           case QVariant::Bool:
             if (tr_variantGetBool (b, &boolVal))
-              myValues[i].setValue (bool(boolVal));
+              myValues[i].setValue (static_cast<bool> (boolVal));
             break;
 
           case QVariant::Double:
@@ -187,7 +187,7 @@ Prefs :: Prefs (const char * configDir):
 
           case QVariant::DateTime:
             if (tr_variantGetInt (b, &intVal))
-                myValues[i].setValue (QDateTime :: fromTime_t (intVal));
+                myValues[i].setValue (QDateTime::fromTime_t (intVal));
             break;
 
           default:
@@ -199,7 +199,7 @@ Prefs :: Prefs (const char * configDir):
     tr_variantFree (&top);
 }
 
-Prefs :: ~Prefs ()
+Prefs::~Prefs ()
 {
   // make a dict from settings.json
   tr_variant current_settings;
@@ -257,8 +257,8 @@ Prefs :: ~Prefs ()
 
   // update settings.json with our settings
   tr_variant file_settings;
-  const QFile file (QDir(myConfigDir).absoluteFilePath("settings.json"));
-  if (tr_variantFromFile (&file_settings, TR_VARIANT_FMT_JSON, file.fileName().toUtf8().constData()))
+  const QFile file (QDir(myConfigDir).absoluteFilePath(QLatin1String ("settings.json")));
+  if (!tr_variantFromFile (&file_settings, TR_VARIANT_FMT_JSON, file.fileName().toUtf8().constData(), NULL))
     tr_variantInitDict (&file_settings, PREFS_COUNT);
   tr_variantMergeDicts (&file_settings, &current_settings);
   tr_variantToFile (&file_settings, TR_VARIANT_FMT_JSON, file.fileName().toUtf8().constData());
@@ -273,7 +273,7 @@ Prefs :: ~Prefs ()
  * If you add a new preferences key, you /must/ add a default value here.
  */
 void
-Prefs :: initDefaults (tr_variant * d)
+Prefs::initDefaults (tr_variant * d)
 {
   tr_variantDictReserve (d, 38);
   tr_variantDictAddBool (d, TR_KEY_blocklist_updates_enabled, true);
@@ -321,14 +321,14 @@ Prefs :: initDefaults (tr_variant * d)
 ***/
 
 bool
-Prefs :: getBool (int key) const
+Prefs::getBool (int key) const
 {
   assert (myItems[key].type == QVariant::Bool);
   return myValues[key].toBool();
 }
 
 QString
-Prefs :: getString (int key) const
+Prefs::getString (int key) const
 {
   assert (myItems[key].type == QVariant::String);
   const QByteArray b = myValues[key].toByteArray();
@@ -338,21 +338,21 @@ Prefs :: getString (int key) const
 }
 
 int
-Prefs :: getInt (int key) const
+Prefs::getInt (int key) const
 {
   assert (myItems[key].type == QVariant::Int);
   return myValues[key].toInt();
 }
 
 double
-Prefs :: getDouble (int key) const
+Prefs::getDouble (int key) const
 {
   assert (myItems[key].type == QVariant::Double);
   return myValues[key].toDouble();
 }
 
 QDateTime
-Prefs :: getDateTime (int key) const
+Prefs::getDateTime (int key) const
 {
   assert (myItems[key].type == QVariant::DateTime);
   return myValues[key].toDateTime();
@@ -363,7 +363,7 @@ Prefs :: getDateTime (int key) const
 ***/
 
 void
-Prefs :: toggleBool (int key)
+Prefs::toggleBool (int key)
 {
   set (key, !getBool(key));
 }

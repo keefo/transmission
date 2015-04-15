@@ -1,5 +1,5 @@
 /******************************************************************************
- * $Id$
+ * $Id: tr-window.c 14142 2013-07-24 00:13:31Z jordan $
  *
  * Copyright (c) Transmission authors and contributors
  *

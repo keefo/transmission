@@ -1,15 +1,13 @@
 /*
  * This file Copyright (C) 2009-2014 Mnemosyne LLC
  *
- * It may be used under the GNU Public License v2 or v3 licenses,
+ * It may be used under the GNU GPL versions 2 or 3
  * or any future license endorsed by Mnemosyne LLC.
  *
- * $Id$
+ * $Id: utils.cc 14467 2015-01-29 22:10:00Z mikedld $
  */
 
-#include <iostream>
-
-#ifdef WIN32
+#ifdef _WIN32
  #include <windows.h>
  #include <shellapi.h>
 #endif
@@ -25,6 +23,11 @@
 #include <QSet>
 #include <QStyle>
 
+#if QT_VERSION >= QT_VERSION_CHECK(5, 0, 0)
+#include <QMimeDatabase>
+#include <QMimeType>
+#endif
+
 #include <libtransmission/transmission.h>
 #include <libtransmission/utils.h> // tr_formatter
 
@@ -34,38 +37,12 @@
 ****
 ***/
 
-#if defined(WIN32) && QT_VERSION >= QT_VERSION_CHECK(5, 0, 0)
+#if defined(_WIN32) && QT_VERSION >= QT_VERSION_CHECK(5, 0, 0)
 // Should be in QtWinExtras soon, but for now let's import it manually
 extern QPixmap qt_pixmapFromWinHICON(HICON icon);
 #endif
 
-QString
-Utils :: remoteFileChooser (QWidget * parent, const QString& title, const QString& myPath, bool dir, bool local)
-{
-  QString path;
-
-  if (local)
-    {
-      if (dir)
-        path = QFileDialog::getExistingDirectory (parent, title, myPath);
-      else
-        path = QFileDialog::getOpenFileName (parent, title, myPath);
-    }
-  else
-    {
-      path = QInputDialog::getText (parent, title, tr ("Enter a location:"), QLineEdit::Normal, myPath, NULL);
-    }
-
-  return path;
-}
-
-void
-Utils :: toStderr (const QString& str)
-{
-  std::cerr << qPrintable(str) << std::endl;
-}
-
-#ifdef WIN32
+#ifdef _WIN32
 namespace
 {
   void
@@ -73,7 +50,7 @@ namespace
   {
     QString const pixmapCacheKey = QLatin1String ("tr_file_ext_")
                                  + QString::number (iconSize)
-                                 + "_"
+                                 + QLatin1Char ('_')
                                  + fileInfo.suffix ();
 
     QPixmap pixmap;
@@ -82,7 +59,7 @@ namespace
         const QString filename = fileInfo.fileName ();
 
         SHFILEINFO shellFileInfo;
-        if (::SHGetFileInfoW ((const wchar_t*) filename.utf16 (), FILE_ATTRIBUTE_NORMAL,
+        if (::SHGetFileInfoW (reinterpret_cast<const wchar_t*> (filename.utf16 ()), FILE_ATTRIBUTE_NORMAL,
                               &shellFileInfo, sizeof(shellFileInfo),
                               SHGFI_ICON | iconSize | SHGFI_USEFILEATTRIBUTES) != 0)
           {
@@ -107,9 +84,12 @@ namespace
 #endif
 
 QIcon
-Utils :: guessMimeIcon (const QString& filename)
+Utils::guessMimeIcon (const QString& filename)
 {
-#ifdef WIN32
+  static const QIcon fallback = qApp->style ()->standardIcon (QStyle::SP_FileIcon);
+
+#ifdef _WIN32
+
   QIcon icon;
 
   if (!filename.isEmpty ())
@@ -121,20 +101,24 @@ Utils :: guessMimeIcon (const QString& filename)
       addAssociatedFileIcon (fileInfo, SHGFI_LARGEICON, icon);
     }
 
-  if (icon.isNull ())
-    icon = QApplication::style ()->standardIcon (QStyle::SP_FileIcon);
+  if (!icon.isNull ())
+    return icon;
 
-  return icon;
+#elif QT_VERSION >= QT_VERSION_CHECK(5, 0, 0)
+
+  QMimeDatabase mimeDb;
+  QMimeType mimeType = mimeDb.mimeTypeForFile (filename, QMimeDatabase::MatchExtension);
+  if (mimeType.isValid ())
+    return QIcon::fromTheme (mimeType.iconName (), QIcon::fromTheme (mimeType.genericIconName (), fallback));
+
 #else
+
   enum { DISK, DOCUMENT, PICTURE, VIDEO, ARCHIVE, AUDIO, APP, TYPE_COUNT };
-  static QIcon fallback;
   static QIcon fileIcons[TYPE_COUNT];
   static QSet<QString> suffixes[TYPE_COUNT];
 
   if (fileIcons[0].isNull ())
     {
-      fallback = QApplication::style()->standardIcon (QStyle :: SP_FileIcon);
-
       suffixes[DISK] << QString::fromLatin1("iso");
       fileIcons[DISK]= QIcon::fromTheme (QString::fromLatin1("media-optical"), fallback);
 
@@ -183,12 +167,13 @@ Utils :: guessMimeIcon (const QString& filename)
     if (suffixes[i].contains (suffix))
       return fileIcons[i];
 
-  return fallback;
 #endif
+
+  return fallback;
 }
 
 bool
-Utils :: isValidUtf8  (const char *s)
+Utils::isValidUtf8 (const char * s)
 {
   int n;  // number of bytes in a UTF-8 sequence
 
@@ -205,15 +190,14 @@ Utils :: isValidUtf8  (const char *s)
       for  (int m = 1; m < n; m++)
         if  ((c[m] & 0xc0) != 0x80)
           return false;
-    } 
+    }
 
   return true;
 }
 
 QString
-Utils :: removeTrailingDirSeparator (const QString& path)
+Utils::removeTrailingDirSeparator (const QString& path)
 {
-  return path.endsWith (QDir::separator ())
-    ? path.left (path.length()-1)
-    : path;
+  const QFileInfo pathInfo (path);
+  return pathInfo.fileName ().isEmpty () ? pathInfo.absolutePath () : pathInfo.absoluteFilePath ();
 }

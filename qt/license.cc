@@ -1,10 +1,10 @@
 /*
  * This file Copyright (C) 2009-2014 Mnemosyne LLC
  *
- * It may be used under the GNU Public License v2 or v3 licenses,
+ * It may be used under the GNU GPL versions 2 or 3
  * or any future license endorsed by Mnemosyne LLC.
  *
- * $Id$
+ * $Id: license.cc 14466 2015-01-29 21:53:05Z mikedld $
  */
 
 #include <QDialogButtonBox>
@@ -13,7 +13,7 @@
 
 #include "license.h"
 
-LicenseDialog :: LicenseDialog (QWidget * parent):
+LicenseDialog::LicenseDialog (QWidget * parent):
   QDialog (parent, Qt::Dialog)
 {
   setWindowTitle (tr ("License"));
@@ -22,7 +22,7 @@ LicenseDialog :: LicenseDialog (QWidget * parent):
 
   QPlainTextEdit * t = new QPlainTextEdit (this);
   t->setReadOnly (true);
-  t->setPlainText (
+  t->setPlainText (QLatin1String (
     "Copyright 2005-2014. All code is copyrighted by the respective authors.\n"
     "\n"
     "Transmission can be redistributed and/or modified under the terms of the "
@@ -35,7 +35,7 @@ LicenseDialog :: LicenseDialog (QWidget * parent):
     "MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.\n"
     "\n"
     "Some of Transmission's source files have more permissive licenses. "
-    "Those files may, of course, be used on their own under their own terms.\n");
+    "Those files may, of course, be used on their own under their own terms.\n"));
   v->addWidget (t);
 
   QDialogButtonBox * box = new QDialogButtonBox;

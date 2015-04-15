@@ -4,7 +4,7 @@
  * It may be used under the GNU GPL versions 2 or 3
  * or any future license endorsed by Mnemosyne LLC.
  *
- * $Id$
+ * $Id: torrent-filter.h 14468 2015-01-29 22:44:43Z mikedld $
  */
 
 #ifndef QTR_TORRENT_FILTER_H
@@ -26,7 +26,7 @@ class TorrentFilter: public QSortFilterProxyModel
     Q_OBJECT
 
   public:
-    TorrentFilter (Prefs& prefs);
+    TorrentFilter (const Prefs& prefs);
     virtual ~TorrentFilter ();
 
   public:
@@ -48,7 +48,7 @@ class TorrentFilter: public QSortFilterProxyModel
     void countTorrentsPerMode (int * setmeCounts) const;
 
   private:
-    Prefs& myPrefs;
+    const Prefs& myPrefs;
 };
 
 #endif

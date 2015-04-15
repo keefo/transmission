@@ -4,7 +4,7 @@
  * It may be used under the GNU GPL versions 2 or 3
  * or any future license endorsed by Mnemosyne LLC.
  *
- * $Id$
+ * $Id: freespace-label.h 14403 2014-12-26 18:41:47Z mikedld $
  */
 
 #ifndef QTR_FREESPACE_LABEL_H
@@ -18,23 +18,30 @@
 
 class Session;
 
+extern "C"
+{
+  struct tr_variant;
+}
+
 class FreespaceLabel: public QLabel
 {
     Q_OBJECT
 
   public:
-    FreespaceLabel (Session&, const QString& path, QWidget *parent=0);
+    FreespaceLabel (QWidget * parent = 0);
     virtual ~FreespaceLabel () {}
+
+    void setSession (Session& session);
     void setPath (const QString& folder);
 
   private:
-    Session& mySession;
+    Session * mySession;
     int64_t myTag;
     QString myPath;
     QTimer myTimer;
 
   private slots:
-    void onSessionExecuted (int64_t tag, const QString& result, struct tr_variant * arguments);
+    void onSessionExecuted (int64_t tag, const QString& result, tr_variant * arguments);
     void onTimer ();
 };
 

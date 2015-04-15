@@ -4,15 +4,18 @@
  * It may be used under the GNU GPL versions 2 or 3
  * or any future license endorsed by Mnemosyne LLC.
  *
- * $Id$
+ * $Id: prefs-dialog.h 14462 2015-01-25 19:55:05Z mikedld $
  */
 
 #ifndef PREFS_DIALOG_H
 #define PREFS_DIALOG_H
 
 #include <QDialog>
+#include <QMap>
 #include <QSet>
+
 #include "prefs.h"
+#include "ui_prefs-dialog.h"
 
 class QAbstractButton;
 class QCheckBox;
@@ -42,17 +45,15 @@ class PrefsDialog: public QDialog
     void spinBoxEditingFinished ();
     void timeEditingFinished ();
     void lineEditingFinished ();
+    void pathChanged (const QString& path);
     void refreshPref (int key);
     void encryptionEdited (int);
     void altSpeedDaysEdited (int);
     void sessionUpdated ();
-    void onWatchClicked ();
-    void onScriptClicked ();
-    void onIncompleteClicked ();
-    void onDestinationClicked ();
-    void onLocationSelected (const QString&, int key);
     void onPortTested (bool);
     void onPortTest ();
+    void onIdleLimitChanged ();
+    void onQueueStalledMinutesChanged ();
 
     void onUpdateBlocklistClicked ();
     void onUpdateBlocklistCancelled ();
@@ -60,12 +61,8 @@ class PrefsDialog: public QDialog
     void onBlocklistUpdated (int n);
 
   private:
-    QDoubleSpinBox * doubleSpinBoxNew (int key, double low, double high, double step, int decimals);
-    QCheckBox * checkBoxNew (const QString& text, int key);
-    QSpinBox * spinBoxNew (int key, int low, int high, int step);
-    QTimeEdit * timeEditNew (int key);
-    QLineEdit * lineEditNew (int key, int mode = 0);
-    void enableBuddyWhenChecked (QCheckBox *, QWidget *);
+    bool updateWidgetValue (QWidget * widget, int prefKey);
+    void linkWidgetToPref (QWidget * widget, int prefKey);
     void updateBlocklistLabel ();
 
   public:
@@ -74,14 +71,14 @@ class PrefsDialog: public QDialog
 
   private:
     void setPref (int key, const QVariant& v);
-    bool isAllowed (int key) const;
-    QWidget * createDownloadingTab ();
-    QWidget * createSeedingTab ();
-    QWidget * createSpeedTab ();
-    QWidget * createPrivacyTab ();
-    QWidget * createNetworkTab ();
-    QWidget * createDesktopTab ();
-    QWidget * createRemoteTab (Session&);
+
+    void initDownloadingTab ();
+    void initSeedingTab ();
+    void initSpeedTab ();
+    void initPrivacyTab ();
+    void initNetworkTab ();
+    void initDesktopTab ();
+    void initRemoteTab ();
 
   private:
     typedef QMap<int,QWidget*> key2widget_t;
@@ -89,15 +86,6 @@ class PrefsDialog: public QDialog
     const bool myIsServer;
     Session& mySession;
     Prefs& myPrefs;
-    QVBoxLayout * myLayout;
-    QLabel * myPortLabel;
-    QPushButton * myPortButton;
-    QPushButton * myWatchButton;
-    QPushButton * myTorrentDoneScriptButton;
-    QCheckBox * myTorrentDoneScriptCheckbox;
-    QCheckBox * myIncompleteCheckbox;
-    QPushButton * myIncompleteButton;
-    QPushButton * myDestinationButton;
     QWidgetList myWebWidgets;
     QWidgetList myWebAuthWidgets;
     QWidgetList myWebWhitelistWidgets;
@@ -106,12 +94,11 @@ class PrefsDialog: public QDialog
     QWidgetList mySchedWidgets;
     QWidgetList myBlockWidgets;
     QWidgetList myUnsupportedWhenRemote;
-    FreespaceLabel * myFreespaceLabel;
+    Ui::PrefsDialog ui;
 
     int myBlocklistHttpTag;
     QHttp * myBlocklistHttp;
     QMessageBox * myBlocklistDialog;
-    QLabel * myBlocklistLabel;
 };
 
 #endif

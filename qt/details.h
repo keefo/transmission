@@ -4,7 +4,7 @@
  * It may be used under the GNU GPL versions 2 or 3
  * or any future license endorsed by Mnemosyne LLC.
  *
- * $Id$
+ * $Id: details.h 14468 2015-01-29 22:44:43Z mikedld $
  */
 
 #ifndef DETAILS_DIALOG_H
@@ -15,20 +15,11 @@
 #include <QMap>
 #include <QSet>
 #include <QTimer>
-#include <QWidgetList>
 
 #include "prefs.h"
 
-class FileTreeView;
-class QTreeView;
-class QComboBox;
-class QCheckBox;
-class QDoubleSpinBox;
-class QLabel;
-class QRadioButton;
-class QSpinBox;
-class QTextBrowser;
-class QTreeWidget;
+#include "ui_details.h"
+
 class QTreeWidgetItem;
 class Session;
 class Torrent;
@@ -49,89 +40,39 @@ class Details: public QDialog
     void onTimer ();
 
   public:
-    Details (Session&, Prefs&, TorrentModel&, QWidget * parent = 0);
+    Details (Session&, Prefs&, const TorrentModel&, QWidget * parent = 0);
     ~Details ();
     void setIds (const QSet<int>& ids);
     virtual QSize sizeHint () const { return QSize (440, 460); }
 
   private:
-    QWidget * createPeersTab ();
-    QWidget * createTrackerTab ();
-    QWidget * createInfoTab ();
-    QWidget * createFilesTab ();
-    QWidget * createOptionsTab ();
+    void initPeersTab ();
+    void initTrackerTab ();
+    void initInfoTab ();
+    void initFilesTab ();
+    void initOptionsTab ();
 
   private:
     QIcon getStockIcon (const QString& freedesktop_name, int fallback);
     QString timeToStringRounded (int seconds);
     QString trimToDesiredWidth (const QString& str);
-    void enableWhenChecked (QCheckBox *, QWidget *);
 
   private:
     Session& mySession;
     Prefs& myPrefs;
-    TorrentModel& myModel;
+    const TorrentModel& myModel;
     QSet<int> myIds;
     QTimer myTimer;
     bool myChangedTorrents;
     bool myHavePendingRefresh;
 
-    QLabel * myStateLabel;
-    QLabel * myHaveLabel;
-    QLabel * myAvailabilityLabel;
-    QLabel * myDownloadedLabel;
-    QLabel * myUploadedLabel;
-    QLabel * myErrorLabel;
-    QLabel * myRunTimeLabel;
-    QLabel * myETALabel;
-    QLabel * myLastActivityLabel;
-
-    QCheckBox * mySessionLimitCheck;
-    QCheckBox * mySingleDownCheck;
-    QCheckBox * mySingleUpCheck;
-    QCheckBox * myShowTrackerScrapesCheck;
-    QCheckBox * myShowBackupTrackersCheck;
-    QPushButton * myAddTrackerButton;
-    QPushButton * myEditTrackerButton;
-    QPushButton * myRemoveTrackerButton;
-    QSpinBox * mySingleDownSpin;
-    QSpinBox * mySingleUpSpin;
-    QComboBox * myRatioCombo;
-    QDoubleSpinBox * myRatioSpin;
-    QComboBox * myIdleCombo;
-    QSpinBox * myIdleSpin;
-    QSpinBox * myPeerLimitSpin;
-    QComboBox * myBandwidthPriorityCombo;
-
-    QLabel * mySizeLabel;
-    QLabel * myHashLabel;
-    QLabel * myPrivacyLabel;
-    QLabel * myOriginLabel;
-    QLabel * myLocationLabel;
-    QTextBrowser * myCommentBrowser;
-
-    QLabel * myTrackerLabel;
-    QLabel * myScrapeTimePrevLabel;
-    QLabel * myScrapeTimeNextLabel;
-    QLabel * myScrapeResponseLabel;
-    QLabel * myAnnounceTimePrevLabel;
-    QLabel * myAnnounceTimeNextLabel;
-    QLabel * myAnnounceResponseLabel;
-    QLabel * myAnnounceManualLabel;
+    Ui::DetailsDialog ui;
 
     TrackerModel * myTrackerModel;
     TrackerModelFilter * myTrackerFilter;
     TrackerDelegate * myTrackerDelegate;
-    QTreeView * myTrackerView;
-    //QMap<QString,QTreeWidgetItem*> myTrackerTiers;
-    //QMap<QString,QTreeWidgetItem*> myTrackerItems;
 
-    QTreeWidget * myPeerTree;
     QMap<QString,QTreeWidgetItem*> myPeers;
-
-    QWidgetList myWidgets;
-
-    FileTreeView * myFileTreeView;
 
   private slots:
     void refreshPref (int key);
@@ -146,6 +87,7 @@ class Details: public QDialog
     void onUploadLimitedToggled (bool);
     void onRatioModeChanged (int);
     void onIdleModeChanged (int);
+    void onIdleLimitChanged ();
     void onShowTrackerScrapesToggled (bool);
     void onShowBackupTrackersToggled (bool);
     void onTrackerSelectionChanged ();

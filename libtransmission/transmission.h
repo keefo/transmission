@@ -4,7 +4,7 @@
  * It may be used under the 3-Clause BSD License, the GNU Public License v2,
  * or v3, or any future license endorsed by Mnemosyne LLC.
  *
- * $Id$
+ * $Id: transmission.h 14384 2014-12-13 17:04:14Z mikedld $
  */
 
 /*
@@ -29,9 +29,8 @@ extern "C" {
 #include <inttypes.h> /* uintN_t */
 #include <time.h> /* time_t */
 
-#ifdef WIN32
- #define __USE_MINGW_ANSI_STDIO 1
- #define __STDC_FORMAT_MACROS 1
+#ifdef _MSC_VER
+ typedef intptr_t ssize_t;
 #endif
 
 #if !defined (__cplusplus)
@@ -45,7 +44,7 @@ extern "C" {
 #endif
 
 #ifndef PRId64
- #ifdef WIN32
+ #ifdef _WIN32
   #define PRId64 "I64"
  #else
   #define PRId64 "lld"
@@ -53,7 +52,7 @@ extern "C" {
 #endif
 
 #ifndef PRIu64
- #ifdef WIN32
+ #ifdef _WIN32
   #define PRIu64 "I64u"
  #else
   #define PRIu64 "llu"
@@ -61,22 +60,30 @@ extern "C" {
 #endif
 
 #ifndef PRIu32
- #ifdef WIN32
+ #ifdef _WIN32
   #define PRIu32 "u"
  #else
   #define PRIu32 "lu"
  #endif
 #endif
 
+#ifndef PRIdMAX
+ #ifdef _WIN32
+  #define PRIdMAX "I64"
+ #else
+  #define PRIdMAX "jd"
+ #endif
+#endif
+
 #ifndef TR_PRIuSIZE
- #ifdef _MSC_VER
+ #ifdef _WIN32
   #define TR_PRIuSIZE "Iu"
  #else
   #define TR_PRIuSIZE "zu"
  #endif
 #endif
 
-#if defined (WIN32) && defined (_MSC_VER)
+#if defined (_MSC_VER) && !defined (__cplusplus)
  #define inline __inline
 #endif
 
@@ -1836,7 +1843,7 @@ struct tr_info
 
     /* Flags */
     bool               isPrivate;
-    bool               isMultifile;
+    bool               isFolder;
 };
 
 static inline bool tr_torrentHasMetadata (const tr_torrent * tor)

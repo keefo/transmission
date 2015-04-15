@@ -6,12 +6,15 @@
    <rect>
     <x>0</x>
     <y>0</y>
-    <width>792</width>
-    <height>390</height>
+    <width>472</width>
+    <height>427</height>
    </rect>
   </property>
   <property name="windowTitle">
    <string>Transmission</string>
+  </property>
+  <property name="unifiedTitleAndToolBarOnMac">
+   <bool>true</bool>
   </property>
   <widget class="QWidget" name="centralwidget">
    <layout class="QVBoxLayout" name="verticalLayout">
@@ -38,9 +41,112 @@
       <property name="selectionMode">
        <enum>QAbstractItemView::ExtendedSelection</enum>
       </property>
+      <property name="verticalScrollMode">
+       <enum>QAbstractItemView::ScrollPerPixel</enum>
+      </property>
       <property name="uniformItemSizes">
        <bool>false</bool>
       </property>
+     </widget>
+    </item>
+    <item>
+     <widget class="QWidget" name="statusBar" native="true">
+      <property name="styleSheet">
+       <string notr="true">QLabel { margin: 3px 0; }</string>
+      </property>
+      <layout class="QHBoxLayout" name="statusBarLayout">
+       <property name="spacing">
+        <number>3</number>
+       </property>
+       <property name="margin">
+        <number>3</number>
+       </property>
+       <item>
+        <widget class="TrIconToolButton" name="optionsButton">
+         <property name="icon">
+          <iconset resource="application.qrc">
+           <normaloff>:/icons/utilities.png</normaloff>:/icons/utilities.png</iconset>
+         </property>
+         <property name="popupMode">
+          <enum>QToolButton::InstantPopup</enum>
+         </property>
+         <property name="toolButtonStyle">
+          <enum>Qt::ToolButtonIconOnly</enum>
+         </property>
+         <property name="autoRaise">
+          <bool>true</bool>
+         </property>
+        </widget>
+       </item>
+       <item>
+        <widget class="QToolButton" name="altSpeedButton">
+         <property name="icon">
+          <iconset resource="application.qrc">
+           <normaloff>:/icons/alt-limit-off.png</normaloff>
+           <normalon>:/icons/alt-limit-on.png</normalon>:/icons/alt-limit-off.png</iconset>
+         </property>
+         <property name="checkable">
+          <bool>true</bool>
+         </property>
+         <property name="toolButtonStyle">
+          <enum>Qt::ToolButtonIconOnly</enum>
+         </property>
+         <property name="autoRaise">
+          <bool>true</bool>
+         </property>
+        </widget>
+       </item>
+       <item>
+        <widget class="QLabel" name="networkLabel"/>
+       </item>
+       <item>
+        <spacer name="horizontalSpacer">
+         <property name="orientation">
+          <enum>Qt::Horizontal</enum>
+         </property>
+         <property name="sizeHint" stdset="0">
+          <size>
+           <width>1</width>
+           <height>1</height>
+          </size>
+         </property>
+        </spacer>
+       </item>
+       <item>
+        <widget class="QLabel" name="downloadSpeedLabel">
+         <property name="alignment">
+          <set>Qt::AlignRight|Qt::AlignTrailing|Qt::AlignVCenter</set>
+         </property>
+        </widget>
+       </item>
+       <item>
+        <widget class="QLabel" name="uploadSpeedLabel">
+         <property name="alignment">
+          <set>Qt::AlignRight|Qt::AlignTrailing|Qt::AlignVCenter</set>
+         </property>
+        </widget>
+       </item>
+       <item>
+        <widget class="QLabel" name="statsLabel"/>
+       </item>
+       <item>
+        <widget class="TrIconToolButton" name="statsModeButton">
+         <property name="icon">
+          <iconset resource="application.qrc">
+           <normaloff>:/icons/ratio.png</normaloff>:/icons/ratio.png</iconset>
+         </property>
+         <property name="popupMode">
+          <enum>QToolButton::InstantPopup</enum>
+         </property>
+         <property name="toolButtonStyle">
+          <enum>Qt::ToolButtonIconOnly</enum>
+         </property>
+         <property name="autoRaise">
+          <bool>true</bool>
+         </property>
+        </widget>
+       </item>
+      </layout>
      </widget>
     </item>
    </layout>
@@ -50,8 +156,8 @@
     <rect>
      <x>0</x>
      <y>0</y>
-     <width>792</width>
-     <height>20</height>
+     <width>472</width>
+     <height>24</height>
     </rect>
    </property>
    <property name="sizePolicy">
@@ -154,9 +260,6 @@
    <addaction name="menu_Help"/>
   </widget>
   <widget class="QToolBar" name="toolBar">
-   <property name="windowTitle">
-    <string>toolBar</string>
-   </property>
    <property name="movable">
     <bool>false</bool>
    </property>
@@ -200,7 +303,7 @@
     <string>Open a torrent</string>
    </property>
    <property name="shortcut">
-    <string>Ctrl+O</string>
+    <string notr="true">Ctrl+O</string>
    </property>
   </action>
   <action name="action_New">
@@ -211,7 +314,7 @@
     <string>Create a new torrent</string>
    </property>
    <property name="shortcut">
-    <string>Ctrl+N</string>
+    <string notr="true">Ctrl+N</string>
    </property>
   </action>
   <action name="action_Properties">
@@ -222,7 +325,7 @@
     <string>Show torrent properties</string>
    </property>
    <property name="shortcut">
-    <string>Alt+Enter</string>
+    <string notr="true">Alt+Enter</string>
    </property>
   </action>
   <action name="action_OpenFolder">
@@ -233,7 +336,7 @@
     <string>Open the torrent's folder</string>
    </property>
    <property name="shortcut">
-    <string>Ctrl+E</string>
+    <string notr="true">Ctrl+E</string>
    </property>
   </action>
   <action name="action_Start">
@@ -244,7 +347,7 @@
     <string>Start torrent</string>
    </property>
    <property name="shortcut">
-    <string>Ctrl+S</string>
+    <string notr="true">Ctrl+S</string>
    </property>
    <property name="priority">
     <enum>QAction::LowPriority</enum>
@@ -266,7 +369,7 @@
     <string>Pause torrent</string>
    </property>
    <property name="shortcut">
-    <string>Ctrl+P</string>
+    <string notr="true">Ctrl+P</string>
    </property>
    <property name="priority">
     <enum>QAction::LowPriority</enum>
@@ -280,7 +383,7 @@
     <string>Verify local data</string>
    </property>
    <property name="shortcut">
-    <string>Ctrl+V</string>
+    <string notr="true">Ctrl+V</string>
    </property>
   </action>
   <action name="action_Remove">
@@ -291,7 +394,7 @@
     <string>Remove torrent</string>
    </property>
    <property name="shortcut">
-    <string>Del</string>
+    <string notr="true">Del</string>
    </property>
    <property name="priority">
     <enum>QAction::LowPriority</enum>
@@ -305,7 +408,7 @@
     <string>Remove torrent and delete its files</string>
    </property>
    <property name="shortcut">
-    <string>Shift+Del</string>
+    <string notr="true">Shift+Del</string>
    </property>
   </action>
   <action name="action_StartAll">
@@ -323,7 +426,10 @@
     <string>&amp;Quit</string>
    </property>
    <property name="shortcut">
-    <string>Ctrl+Q</string>
+    <string notr="true">Ctrl+Q</string>
+   </property>
+   <property name="menuRole">
+    <enum>QAction::QuitRole</enum>
    </property>
   </action>
   <action name="action_SelectAll">
@@ -331,7 +437,7 @@
     <string>&amp;Select All</string>
    </property>
    <property name="shortcut">
-    <string>Ctrl+A</string>
+    <string notr="true">Ctrl+A</string>
    </property>
   </action>
   <action name="action_DeselectAll">
@@ -339,12 +445,15 @@
     <string>&amp;Deselect All</string>
    </property>
    <property name="shortcut">
-    <string>Ctrl+Shift+A</string>
+    <string notr="true">Ctrl+Shift+A</string>
    </property>
   </action>
   <action name="action_Preferences">
    <property name="text">
     <string>&amp;Preferences</string>
+   </property>
+   <property name="menuRole">
+    <enum>QAction::PreferencesRole</enum>
    </property>
   </action>
   <action name="action_CompactView">
@@ -361,7 +470,7 @@
     <string>Compact View</string>
    </property>
    <property name="shortcut">
-    <string>Alt+C</string>
+    <string notr="true">Alt+C</string>
    </property>
   </action>
   <action name="action_Toolbar">
@@ -481,12 +590,15 @@
     <string>&amp;Contents</string>
    </property>
    <property name="shortcut">
-    <string>F1</string>
+    <string notr="true">F1</string>
    </property>
   </action>
   <action name="action_About">
    <property name="text">
     <string>&amp;About</string>
+   </property>
+   <property name="menuRole">
+    <enum>QAction::AboutRole</enum>
    </property>
   </action>
   <action name="action_ReverseSortOrder">
@@ -592,7 +704,7 @@
     <string>Open &amp;URL...</string>
    </property>
    <property name="shortcut">
-    <string>Ctrl+U</string>
+    <string notr="true">Ctrl+U</string>
    </property>
   </action>
   <action name="action_Donate">
@@ -608,7 +720,7 @@
     <string>Bypass the queue and start now</string>
    </property>
    <property name="shortcut">
-    <string>Ctrl+Shift+S</string>
+    <string notr="true">Ctrl+Shift+S</string>
    </property>
    <property name="priority">
     <enum>QAction::LowPriority</enum>
@@ -643,6 +755,13 @@
    </property>
   </action>
  </widget>
+ <customwidgets>
+  <customwidget>
+   <class>TrIconToolButton</class>
+   <extends>QToolButton</extends>
+   <header>tricontoolbutton.h</header>
+  </customwidget>
+ </customwidgets>
  <resources>
   <include location="application.qrc"/>
  </resources>

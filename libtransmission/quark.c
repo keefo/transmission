@@ -4,7 +4,7 @@
  * It may be used under the GNU GPL versions 2 or 3
  * or any future license endorsed by Mnemosyne LLC.
  *
- * $Id$
+ * $Id: quark.c 14428 2015-01-02 11:15:31Z mikedld $
  */
 
 #include <assert.h>
@@ -488,7 +488,7 @@ tr_quark_new (const void * str, size_t len)
 
   return ret;
 }
-  
+
 const char *
 tr_quark_get_string (tr_quark q, size_t * len)
 {

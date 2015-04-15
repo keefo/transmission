@@ -1,10 +1,10 @@
 /*
  * This file Copyright (C) 2009-2014 Mnemosyne LLC
  *
- * It may be used under the GNU Public License v2 or v3 licenses,
+ * It may be used under the GNU GPL versions 2 or 3
  * or any future license endorsed by Mnemosyne LLC.
  *
- * $Id$
+ * $Id: watchdir.cc 14394 2014-12-21 23:49:39Z mikedld $
  */
 
 #include <iostream>
@@ -23,13 +23,13 @@
 ****
 ***/
 
-WatchDir :: WatchDir (const TorrentModel& model):
+WatchDir::WatchDir (const TorrentModel& model):
   myModel (model),
   myWatcher (0)
 {
 }
 
-WatchDir :: ~WatchDir ()
+WatchDir::~WatchDir ()
 {
 }
 
@@ -38,7 +38,7 @@ WatchDir :: ~WatchDir ()
 ***/
 
 int
-WatchDir :: metainfoTest (const QString& filename) const
+WatchDir::metainfoTest (const QString& filename) const
 {
   int ret;
   tr_info inf;
@@ -62,7 +62,7 @@ WatchDir :: metainfoTest (const QString& filename) const
 }
 
 void
-WatchDir :: onTimeout ()
+WatchDir::onTimeout ()
 {
   QTimer * t = qobject_cast<QTimer*>(sender());
   const QString filename = t->objectName ();
@@ -74,7 +74,7 @@ WatchDir :: onTimeout ()
 }
 
 void
-WatchDir :: setPath (const QString& path, bool isEnabled)
+WatchDir::setPath (const QString& path, bool isEnabled)
 {
   // clear out any remnants of the previous watcher, if any
   myWatchDirFiles.clear ();
@@ -89,15 +89,15 @@ WatchDir :: setPath (const QString& path, bool isEnabled)
     {
       myWatcher = new QFileSystemWatcher ();
       myWatcher->addPath( path );
-      connect (myWatcher, SIGNAL(directoryChanged(const QString&)),
-               this, SLOT(watcherActivated(const QString&)));
+      connect (myWatcher, SIGNAL(directoryChanged(QString)),
+               this, SLOT(watcherActivated(QString)));
       //std::cerr << "watching " << qPrintable(path) << " for new .torrent files" << std::endl;
-      watcherActivated (path); // trigger the watchdir for .torrent files in there already
+      QTimer::singleShot (0, this, SLOT (rescanAllWatchedDirectories ())); // trigger the watchdir for .torrent files in there already
     }
 }
 
 void
-WatchDir :: watcherActivated (const QString& path)
+WatchDir::watcherActivated (const QString& path)
 {
   const QDir dir(path);
 
@@ -139,4 +139,14 @@ WatchDir :: watcherActivated (const QString& path)
   // update our file list so that we can use it
   // for comparison the next time around
   myWatchDirFiles = files;
+}
+
+void
+WatchDir::rescanAllWatchedDirectories ()
+{
+  if (myWatcher == nullptr)
+    return;
+
+  foreach (const QString& path, myWatcher->directories ())
+    watcherActivated (path);
 }

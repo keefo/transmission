@@ -4,7 +4,7 @@
  * It may be used under the GNU GPL versions 2 or 3
  * or any future license endorsed by Mnemosyne LLC.
  *
- * $Id$
+ * $Id: torrent.h 14428 2015-01-02 11:15:31Z mikedld $
  */
 
 #ifndef __TRANSMISSION__
@@ -303,10 +303,10 @@ tr_torBlockCountBytes (const tr_torrent * tor, const tr_block_index_t block)
                                         : tor->blockSize;
 }
 
-static inline void tr_torrentLock (const tr_torrent * tor) 
-{ 
-  tr_sessionLock (tor->session); 
-} 
+static inline void tr_torrentLock (const tr_torrent * tor)
+{
+  tr_sessionLock (tor->session);
+}
 static inline bool tr_torrentIsLocked (const tr_torrent * tor)
 {
   return tr_sessionIsLocked (tor->session);

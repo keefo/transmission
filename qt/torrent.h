@@ -4,7 +4,7 @@
  * It may be used under the GNU GPL versions 2 or 3
  * or any future license endorsed by Mnemosyne LLC.
  *
- * $Id$
+ * $Id: torrent.h 14468 2015-01-29 22:44:43Z mikedld $
  */
 
 #ifndef QTR_TORRENT_H
@@ -115,7 +115,7 @@ Q_DECLARE_METATYPE(FileList)
 
 class Torrent: public QObject
 {
-    Q_OBJECT;
+    Q_OBJECT
 
   public:
 
@@ -182,7 +182,7 @@ class Torrent: public QObject
     };
 
   public:
-    Torrent (Prefs&, int id);
+    Torrent (const Prefs&, int id);
     virtual ~Torrent ();
 
   signals:
@@ -267,7 +267,7 @@ class Torrent: public QObject
     bool isMagnet () const { return magnetTorrent; }
     int  pieceCount () const { return getInt (PIECE_COUNT); }
     double ratio () const { return getDouble (RATIO); }
-    double percentComplete () const { return haveTotal() / (double)totalSize(); }
+    double percentComplete () const { return haveTotal() / static_cast<double> (totalSize()); }
     double percentDone () const { return getDouble (PERCENT_DONE); }
     double metadataPercentDone () const { return getDouble (METADATA_PERCENT_DONE); }
     uint64_t downloadedEver () const { return getSize (DOWNLOADED_EVER); }
@@ -303,9 +303,9 @@ class Torrent: public QObject
     bool honorsSessionLimits () const { return getBool (HONORS_SESSION_LIMITS); }
     int peerLimit () const { return getInt (PEER_LIMIT); }
     double seedRatioLimit () const { return getDouble (SEED_RATIO_LIMIT); }
-    tr_ratiolimit seedRatioMode () const { return (tr_ratiolimit) getInt (SEED_RATIO_MODE); }
+    tr_ratiolimit seedRatioMode () const { return static_cast<tr_ratiolimit> (getInt (SEED_RATIO_MODE)); }
     int seedIdleLimit () const { return getInt (SEED_IDLE_LIMIT); }
-    tr_idlelimit seedIdleMode () const { return (tr_idlelimit) getInt (SEED_IDLE_MODE); }
+    tr_idlelimit seedIdleMode () const { return static_cast<tr_idlelimit> (getInt (SEED_IDLE_MODE)); }
     TrackerStatsList trackerStats () const{ return myValues[TRACKERSTATS].value<TrackerStatsList>(); }
     QStringList trackers() const { return myValues[TRACKERS].value<QStringList>(); }
     QStringList hosts() const { return myValues[HOSTS].value<QStringList>(); }
@@ -316,7 +316,7 @@ class Torrent: public QObject
 
   public:
     QString activityString () const;
-    tr_torrent_activity getActivity () const { return (tr_torrent_activity) getInt (ACTIVITY); }
+    tr_torrent_activity getActivity () const { return static_cast<tr_torrent_activity> (getInt (ACTIVITY)); }
     bool isFinished () const { return getBool (IS_FINISHED); }
     bool isPaused () const { return getActivity () == TR_STATUS_STOPPED; }
     bool isWaitingToVerify () const { return getActivity () == TR_STATUS_CHECK_WAIT; }
@@ -341,7 +341,7 @@ class Torrent: public QObject
     QIcon getMimeTypeIcon () const { return getIcon (MIME_ICON); }
 
   private:
-    Prefs& myPrefs;
+    const Prefs& myPrefs;
     FileList myFiles;
 };
 

@@ -1,19 +1,18 @@
 /*
  * This file Copyright (C) 2012-2014 Mnemosyne LLC
  *
- * It may be used under the GNU Public License v2 or v3 licenses,
+ * It may be used under the GNU GPL versions 2 or 3
  * or any future license endorsed by Mnemosyne LLC.
  *
- * $Id$
+ * $Id: filterbar.cc 14468 2015-01-29 22:44:43Z mikedld $
  */
 
 #include <QAbstractItemView>
-#include <QPushButton>
 #include <QLabel>
 #include <QHBoxLayout>
-#include <QLineEdit>
 #include <QStylePainter>
 #include <QString>
+#include <QToolButton>
 #include <QtGui>
 
 #include "app.h"
@@ -42,25 +41,33 @@ enum
 
 namespace
 {
-  int getHSpacing (QWidget * w)
+  int getHSpacing (const QWidget * w)
   {
     return qMax (int (HIG::PAD_SMALL), w->style ()->pixelMetric (QStyle::PM_LayoutHorizontalSpacing, 0, w));
   }
+
+  QColor
+  getFadedColor (const QColor& color)
+  {
+    QColor fadedColor (color);
+    fadedColor.setAlpha (128);
+    return fadedColor;
+  }
 }
 
-FilterBarComboBoxDelegate :: FilterBarComboBoxDelegate (QObject * parent, QComboBox * combo):
+FilterBarComboBoxDelegate::FilterBarComboBoxDelegate (QObject * parent, QComboBox * combo):
   QItemDelegate (parent),
   myCombo (combo)
 {
 }
 
 bool
-FilterBarComboBoxDelegate :: isSeparator (const QModelIndex &index)
+FilterBarComboBoxDelegate::isSeparator (const QModelIndex& index)
 {
   return index.data (Qt::AccessibleDescriptionRole).toString () == QLatin1String ("separator");
 }
 void
-FilterBarComboBoxDelegate :: setSeparator (QAbstractItemModel * model, const QModelIndex& index)
+FilterBarComboBoxDelegate::setSeparator (QAbstractItemModel * model, const QModelIndex& index)
 {
   model->setData (index, QString::fromLatin1 ("separator"), Qt::AccessibleDescriptionRole);
 
@@ -70,9 +77,9 @@ FilterBarComboBoxDelegate :: setSeparator (QAbstractItemModel * model, const QMo
 }
 
 void
-FilterBarComboBoxDelegate :: paint (QPainter                    * painter,
-                                    const QStyleOptionViewItem  & option,
-                                    const QModelIndex           & index) const
+FilterBarComboBoxDelegate::paint (QPainter                    * painter,
+                                  const QStyleOptionViewItem  & option,
+                                  const QModelIndex           & index) const
 {
   if (isSeparator (index))
     {
@@ -87,26 +94,27 @@ FilterBarComboBoxDelegate :: paint (QPainter                    * painter,
   else
     {
       QStyleOptionViewItem disabledOption = option;
-      disabledOption.state &= ~ (QStyle::State_Enabled | QStyle::State_Selected);
+      const QPalette::ColorRole disabledColorRole = (disabledOption.state & QStyle::State_Selected) ?
+                                                     QPalette::HighlightedText : QPalette::Text;
+      disabledOption.palette.setColor (disabledColorRole, getFadedColor (disabledOption.palette.color (disabledColorRole)));
+
       QRect boundingBox = option.rect;
 
       const int hmargin = getHSpacing (myCombo);
-      boundingBox.setLeft (boundingBox.left () + hmargin);
-      boundingBox.setRight (boundingBox.right () - hmargin);
+      boundingBox.adjust (hmargin, 0, -hmargin, 0);
 
       QRect decorationRect = rect (option, index, Qt::DecorationRole);
-      decorationRect.moveLeft (decorationRect.left ());
       decorationRect.setSize (myCombo->iconSize ());
-      decorationRect = QStyle::alignedRect (Qt::LeftToRight,
+      decorationRect = QStyle::alignedRect (option.direction,
                                             Qt::AlignLeft|Qt::AlignVCenter,
                                             decorationRect.size (), boundingBox);
-      boundingBox.setLeft (decorationRect.right () + hmargin);
+      Utils::narrowRect (boundingBox, decorationRect.width () + hmargin, 0, option.direction);
 
       QRect countRect  = rect (option, index, TorrentCountStringRole);
-      countRect = QStyle::alignedRect (Qt::LeftToRight,
+      countRect = QStyle::alignedRect (option.direction,
                                        Qt::AlignRight|Qt::AlignVCenter,
                                        countRect.size (), boundingBox);
-      boundingBox.setRight (countRect.left () - hmargin);
+      Utils::narrowRect (boundingBox, 0, countRect.width () + hmargin, option.direction);
       const QRect displayRect = boundingBox;
 
       drawBackground (painter, option, index);
@@ -120,8 +128,8 @@ FilterBarComboBoxDelegate :: paint (QPainter                    * painter,
 }
 
 QSize
-FilterBarComboBoxDelegate :: sizeHint (const QStyleOptionViewItem & option,
-                                       const QModelIndex          & index) const
+FilterBarComboBoxDelegate::sizeHint (const QStyleOptionViewItem & option,
+                                     const QModelIndex          & index) const
 {
   if (isSeparator (index))
     {
@@ -146,13 +154,14 @@ FilterBarComboBoxDelegate :: sizeHint (const QStyleOptionViewItem & option,
 ***
 **/
 
-FilterBarComboBox :: FilterBarComboBox (QWidget * parent):
+FilterBarComboBox::FilterBarComboBox (QWidget * parent):
   QComboBox (parent)
 {
+  setSizeAdjustPolicy (QComboBox::AdjustToContents);
 }
 
 int
-FilterBarComboBox :: currentCount () const
+FilterBarComboBox::currentCount () const
 {
   int count = 0;
 
@@ -163,8 +172,53 @@ FilterBarComboBox :: currentCount () const
   return count;
 }
 
+QSize
+FilterBarComboBox::minimumSizeHint () const
+{
+  QFontMetrics fm (fontMetrics ());
+  const QSize textSize = fm.boundingRect (itemText (0)).size ();
+  const QSize countSize = fm.boundingRect (itemData (0, TorrentCountStringRole).toString ()).size ();
+  return calculateSize (textSize, countSize);
+}
+
+QSize
+FilterBarComboBox::sizeHint () const
+{
+  QFontMetrics fm (fontMetrics ());
+  QSize maxTextSize (0, 0);
+  QSize maxCountSize (0, 0);
+  for (int i = 0, n = count (); i < n; ++i)
+  {
+    const QSize textSize = fm.boundingRect (itemText (i)).size ();
+    maxTextSize.setHeight (qMax (maxTextSize.height (), textSize.height ()));
+    maxTextSize.setWidth (qMax (maxTextSize.width (), textSize.width ()));
+
+    const QSize countSize = fm.boundingRect (itemData (i, TorrentCountStringRole).toString ()).size ();
+    maxCountSize.setHeight (qMax (maxCountSize.height (), countSize.height ()));
+    maxCountSize.setWidth (qMax (maxCountSize.width (), countSize.width ()));
+  }
+
+  return calculateSize (maxTextSize, maxCountSize);
+}
+
+QSize
+FilterBarComboBox::calculateSize (const QSize& textSize, const QSize& countSize) const
+{
+  const int hmargin = getHSpacing (this);
+
+  QStyleOptionComboBox option;
+  initStyleOption (&option);
+
+  QSize contentSize = iconSize () + QSize (4, 2);
+  contentSize.setHeight (qMax (contentSize.height (), textSize.height ()));
+  contentSize.rwidth () += hmargin + textSize.width ();
+  contentSize.rwidth () += hmargin + countSize.width ();
+
+  return style ()->sizeFromContents (QStyle::CT_ComboBox, &option, contentSize, this).expandedTo (qApp->globalStrut ());
+}
+
 void
-FilterBarComboBox :: paintEvent (QPaintEvent * e)
+FilterBarComboBox::paintEvent (QPaintEvent * e)
 {
   Q_UNUSED (e);
 
@@ -181,9 +235,10 @@ FilterBarComboBox :: paintEvent (QPaintEvent * e)
   if (modelIndex.isValid ())
     {
       QStyle * s = style ();
-      QRect rect = s->subControlRect (QStyle::CC_ComboBox, &opt, QStyle::SC_ComboBoxEditField, this);
       const int hmargin = getHSpacing (this);
-      rect.setRight (rect.right () - hmargin);
+
+      QRect rect = s->subControlRect (QStyle::CC_ComboBox, &opt, QStyle::SC_ComboBoxEditField, this);
+      rect.adjust (2, 1, -2, -1);
 
       // draw the icon
       QPixmap pixmap;
@@ -196,8 +251,10 @@ FilterBarComboBox :: paintEvent (QPaintEvent * e)
         }
       if (!pixmap.isNull ())
         {
-          s->drawItemPixmap (&painter, rect, Qt::AlignLeft|Qt::AlignVCenter, pixmap);
-          rect.setLeft (rect.left () + pixmap.width () + hmargin);
+          const QRect iconRect = QStyle::alignedRect(opt.direction, Qt::AlignLeft | Qt::AlignVCenter,
+                                                     opt.iconSize, rect);
+          painter.drawPixmap (iconRect.topLeft (), pixmap);
+          Utils::narrowRect (rect, iconRect.width () + hmargin, 0, opt.direction);
         }
 
       // draw the count
@@ -205,18 +262,83 @@ FilterBarComboBox :: paintEvent (QPaintEvent * e)
       if (!text.isEmpty ())
         {
           const QPen pen = painter.pen ();
-          painter.setPen (opt.palette.color (QPalette::Disabled, QPalette::Text));
-          QRect r = s->itemTextRect (painter.fontMetrics (), rect, Qt::AlignRight|Qt::AlignVCenter, false, text);
-          painter.drawText (r, 0, text);
-          rect.setRight (r.left () - hmargin);
+          painter.setPen (getFadedColor (pen.color ()));
+          const QRect textRect = QStyle::alignedRect(opt.direction, Qt::AlignRight | Qt::AlignVCenter,
+                                                     QSize (opt.fontMetrics.width (text), rect.height ()), rect);
+          painter.drawText (textRect, Qt::AlignRight | Qt::AlignVCenter, text);
+          Utils::narrowRect (rect, 0, textRect.width () + hmargin, opt.direction);
           painter.setPen (pen);
         }
 
       // draw the text
       text = modelIndex.data (Qt::DisplayRole).toString ();
       text = painter.fontMetrics ().elidedText (text, Qt::ElideRight, rect.width ());
-      s->drawItemText (&painter, rect, Qt::AlignLeft|Qt::AlignVCenter, opt.palette, true, text);
+      painter.drawText (rect, Qt::AlignLeft | Qt::AlignVCenter, text);
     }
+}
+
+/****
+*****
+****/
+
+FilterBarLineEdit::FilterBarLineEdit (QWidget * parent):
+  QLineEdit (parent),
+  myClearButton (nullptr)
+{
+#if QT_VERSION < QT_VERSION_CHECK(5, 2, 0)
+  const QIcon icon = QIcon::fromTheme (QLatin1String ("edit-clear"), style ()->standardIcon (QStyle::SP_DialogCloseButton));
+  const int iconSize = style ()->pixelMetric (QStyle::PM_SmallIconSize);
+
+  myClearButton = new QToolButton (this);
+  myClearButton->setStyleSheet (QLatin1String ("QToolButton{border:0;padding:0;margin:0}"));
+  myClearButton->setToolButtonStyle (Qt::ToolButtonIconOnly);
+  myClearButton->setFocusPolicy (Qt::NoFocus);
+  myClearButton->setCursor (Qt::ArrowCursor);
+  myClearButton->setIconSize (QSize (iconSize, iconSize));
+  myClearButton->setIcon (icon);
+  myClearButton->setFixedSize (myClearButton->iconSize () + QSize (2, 2));
+  myClearButton->hide ();
+
+  const int frameWidth = style ()->pixelMetric (QStyle::PM_DefaultFrameWidth);
+  const QSize minSizeHint = minimumSizeHint ();
+  const QSize buttonSize = myClearButton->size ();
+
+  setStyleSheet (QString::fromLatin1 ("QLineEdit{padding-right:%1px}").arg (buttonSize.width () + frameWidth + 1));
+  setMinimumSize (qMax (minSizeHint.width (), buttonSize.width () + frameWidth * 2 + 2),
+                  qMax (minSizeHint.height (), buttonSize.height () + frameWidth * 2 + 2));
+
+  connect (this, SIGNAL (textChanged (QString)), this, SLOT (updateClearButtonVisibility ()));
+  connect (myClearButton, SIGNAL (clicked ()), this, SLOT (clear ()));
+#else
+  setClearButtonEnabled (true);
+#endif
+
+#if QT_VERSION >= QT_VERSION_CHECK(4, 7, 0)
+  setPlaceholderText (tr ("Search..."));
+#endif
+}
+
+void
+FilterBarLineEdit::resizeEvent (QResizeEvent * event)
+{
+  QLineEdit::resizeEvent (event);
+
+#if QT_VERSION < QT_VERSION_CHECK(5, 2, 0)
+  const int frameWidth = style ()->pixelMetric (QStyle::PM_DefaultFrameWidth);
+  const QRect editRect = rect();
+  const QSize buttonSize = myClearButton->size ();
+
+  myClearButton->move (editRect.right () - frameWidth - buttonSize.width (),
+                       editRect.top () + (editRect.height () - buttonSize.height ()) / 2);
+#endif
+}
+
+void
+FilterBarLineEdit::updateClearButtonVisibility ()
+{
+#if QT_VERSION < QT_VERSION_CHECK(5, 2, 0)
+  myClearButton->setVisible (!text ().isEmpty ());
+#endif
 }
 
 /****
@@ -226,15 +348,11 @@ FilterBarComboBox :: paintEvent (QPaintEvent * e)
 ****/
 
 FilterBarComboBox *
-FilterBar :: createActivityCombo ()
+FilterBar::createActivityCombo ()
 {
   FilterBarComboBox * c = new FilterBarComboBox (this);
   FilterBarComboBoxDelegate * delegate = new FilterBarComboBoxDelegate (this, c);
   c->setItemDelegate (delegate);
-
-  QPixmap blankPixmap (c->iconSize ());
-  blankPixmap.fill (Qt::transparent);
-  QIcon blankIcon (blankPixmap);
 
   QStandardItemModel * model = new QStandardItemModel (this);
 
@@ -245,31 +363,31 @@ FilterBar :: createActivityCombo ()
   model->appendRow (new QStandardItem); // separator
   delegate->setSeparator (model, model->index (1, 0));
 
-  row = new QStandardItem (QIcon::fromTheme ("system-run", blankIcon), tr ("Active"));
+  row = new QStandardItem (QIcon::fromTheme (QLatin1String ("system-run")), tr ("Active"));
   row->setData (FilterMode::SHOW_ACTIVE, ActivityRole);
   model->appendRow (row);
 
-  row = new QStandardItem (QIcon::fromTheme ("go-down", blankIcon), tr ("Downloading"));
+  row = new QStandardItem (QIcon::fromTheme (QLatin1String ("go-down")), tr ("Downloading"));
   row->setData (FilterMode::SHOW_DOWNLOADING, ActivityRole);
   model->appendRow (row);
 
-  row = new QStandardItem (QIcon::fromTheme ("go-up", blankIcon), tr ("Seeding"));
+  row = new QStandardItem (QIcon::fromTheme (QLatin1String ("go-up")), tr ("Seeding"));
   row->setData (FilterMode::SHOW_SEEDING, ActivityRole);
   model->appendRow (row);
 
-  row = new QStandardItem (QIcon::fromTheme ("media-playback-pause", blankIcon), tr ("Paused"));
+  row = new QStandardItem (QIcon::fromTheme (QLatin1String ("media-playback-pause")), tr ("Paused"));
   row->setData (FilterMode::SHOW_PAUSED, ActivityRole);
   model->appendRow (row);
 
-  row = new QStandardItem (blankIcon, tr ("Finished"));
+  row = new QStandardItem (QIcon::fromTheme (QLatin1String ("dialog-ok")), tr ("Finished"));
   row->setData (FilterMode::SHOW_FINISHED, ActivityRole);
   model->appendRow (row);
 
-  row = new QStandardItem (QIcon::fromTheme ("view-refresh", blankIcon), tr ("Verifying"));
+  row = new QStandardItem (QIcon::fromTheme (QLatin1String ("view-refresh")), tr ("Verifying"));
   row->setData (FilterMode::SHOW_VERIFYING, ActivityRole);
   model->appendRow (row);
 
-  row = new QStandardItem (QIcon::fromTheme ("dialog-error", blankIcon), tr ("Error"));
+  row = new QStandardItem (QIcon::fromTheme (QLatin1String ("process-stop")), tr ("Error"));
   row->setData (FilterMode::SHOW_ERROR, ActivityRole);
   model->appendRow (row);
 
@@ -285,11 +403,11 @@ FilterBar :: createActivityCombo ()
 
 namespace
 {
-  QString readableHostName (const QString host)
+  QString readableHostName (const QString& host)
   {
     // get the readable name...
     QString name = host;
-    const int pos = name.lastIndexOf ('.');
+    const int pos = name.lastIndexOf (QLatin1Char ('.'));
     if (pos >= 0)
       name.truncate (pos);
     if (!name.isEmpty ())
@@ -299,9 +417,9 @@ namespace
 }
 
 void
-FilterBar :: refreshTrackers ()
+FilterBar::refreshTrackers ()
 {
-  Favicons& favicons = dynamic_cast<MyApp*> (QApplication::instance ())->favicons;
+  Favicons& favicons = qApp->favicons;
   const int firstTrackerRow = 2; // skip over the "All" and separator...
 
   // pull info from the tracker model...
@@ -392,14 +510,14 @@ FilterBar :: refreshTrackers ()
 
 
 FilterBarComboBox *
-FilterBar :: createTrackerCombo (QStandardItemModel * model)
+FilterBar::createTrackerCombo (QStandardItemModel * model)
 {
   FilterBarComboBox * c = new FilterBarComboBox (this);
   FilterBarComboBoxDelegate * delegate = new FilterBarComboBoxDelegate (this, c);
   c->setItemDelegate (delegate);
 
   QStandardItem * row = new QStandardItem (tr ("All"));
-  row->setData ("", TrackerRole);
+  row->setData (QString (), TrackerRole);
   const int count = myTorrents.rowCount ();
   row->setData (count, TorrentCountRole);
   row->setData (getCountString (count), TorrentCountStringRole);
@@ -418,7 +536,7 @@ FilterBar :: createTrackerCombo (QStandardItemModel * model)
 *****
 ****/
 
-FilterBar :: FilterBar (Prefs& prefs, TorrentModel& torrents, TorrentFilter& filter, QWidget * parent):
+FilterBar::FilterBar (Prefs& prefs, const TorrentModel& torrents, const TorrentFilter& filter, QWidget * parent):
   QWidget (parent),
   myPrefs (prefs),
   myTorrents (torrents),
@@ -427,46 +545,33 @@ FilterBar :: FilterBar (Prefs& prefs, TorrentModel& torrents, TorrentFilter& fil
   myIsBootstrapping (true)
 {
   QHBoxLayout * h = new QHBoxLayout (this);
-  const int hmargin = qMax (int (HIG::PAD), style ()->pixelMetric (QStyle::PM_LayoutHorizontalSpacing));
+  h->setContentsMargins (3, 3, 3, 3);
 
   myCountLabel = new QLabel (this);
-  h->setSpacing (0);
-  h->setContentsMargins (2, 2, 2, 2);
   h->addWidget (myCountLabel);
-  h->addSpacing (hmargin);
 
   myActivityCombo = createActivityCombo ();
-  h->addWidget (myActivityCombo, 1);
-  h->addSpacing (hmargin);
+  myActivityCombo->setSizePolicy (QSizePolicy (QSizePolicy::Fixed, QSizePolicy::Fixed));
+  h->addWidget (myActivityCombo);
 
   myTrackerModel = new QStandardItemModel (this);
   myTrackerCombo = createTrackerCombo (myTrackerModel);
-  h->addWidget (myTrackerCombo, 1);
-  h->addSpacing (hmargin*2);
+  h->addWidget (myTrackerCombo);
 
-  myLineEdit = new QLineEdit (this);
+  myLineEdit = new FilterBarLineEdit (this);
   h->addWidget (myLineEdit);
   connect (myLineEdit, SIGNAL (textChanged (QString)), this, SLOT (onTextChanged (QString)));
-
-  QPushButton * p = new QPushButton (this);
-  QIcon icon = QIcon::fromTheme ("edit-clear", style ()->standardIcon (QStyle::SP_DialogCloseButton));
-  int iconSize = style ()->pixelMetric (QStyle::PM_SmallIconSize);
-  p->setIconSize (QSize (iconSize, iconSize));
-  p->setIcon (icon);
-  p->setFlat (true);
-  h->addWidget (p);
-  connect (p, SIGNAL (clicked (bool)), myLineEdit, SLOT (clear ()));
 
   // listen for changes from the other players
   connect (&myPrefs, SIGNAL (changed (int)), this, SLOT (refreshPref (int)));
   connect (myActivityCombo, SIGNAL (currentIndexChanged (int)), this, SLOT (onActivityIndexChanged (int)));
   connect (myTrackerCombo, SIGNAL (currentIndexChanged (int)), this, SLOT (onTrackerIndexChanged (int)));
-  connect (&myFilter, SIGNAL (rowsInserted (const QModelIndex&,int,int)), this, SLOT (refreshCountLabel ()));
-  connect (&myFilter, SIGNAL (rowsRemoved (const QModelIndex&,int,int)), this, SLOT (refreshCountLabel ()));
+  connect (&myFilter, SIGNAL (rowsInserted (QModelIndex, int, int)), this, SLOT (refreshCountLabel ()));
+  connect (&myFilter, SIGNAL (rowsRemoved (QModelIndex, int, int)), this, SLOT (refreshCountLabel ()));
   connect (&myTorrents, SIGNAL (modelReset ()), this, SLOT (onTorrentModelReset ()));
-  connect (&myTorrents, SIGNAL (rowsInserted (const QModelIndex&,int,int)), this, SLOT (onTorrentModelRowsInserted (const QModelIndex&,int,int)));
-  connect (&myTorrents, SIGNAL (rowsRemoved (const QModelIndex&,int,int)), this, SLOT (onTorrentModelRowsRemoved (const QModelIndex&,int,int)));
-  connect (&myTorrents, SIGNAL (dataChanged (const QModelIndex&,const QModelIndex&)), this, SLOT (onTorrentModelDataChanged (const QModelIndex&,const QModelIndex&)));
+  connect (&myTorrents, SIGNAL (rowsInserted (QModelIndex, int, int)), this, SLOT (onTorrentModelRowsInserted (QModelIndex, int, int)));
+  connect (&myTorrents, SIGNAL (rowsRemoved (QModelIndex, int, int)), this, SLOT (onTorrentModelRowsRemoved (QModelIndex, int, int)));
+  connect (&myTorrents, SIGNAL (dataChanged (QModelIndex, QModelIndex)), this, SLOT (onTorrentModelDataChanged (QModelIndex, QModelIndex)));
   connect (myRecountTimer, SIGNAL (timeout ()), this, SLOT (recount ()));
 
   recountSoon ();
@@ -476,13 +581,13 @@ FilterBar :: FilterBar (Prefs& prefs, TorrentModel& torrents, TorrentFilter& fil
 
   // initialize our state
   QList<int> initKeys;
-  initKeys << Prefs :: FILTER_MODE
-           << Prefs :: FILTER_TRACKERS;
+  initKeys << Prefs::FILTER_MODE
+           << Prefs::FILTER_TRACKERS;
   foreach (int key, initKeys)
       refreshPref (key);
 }
 
-FilterBar :: ~FilterBar ()
+FilterBar::~FilterBar ()
 {
   delete myRecountTimer;
 }
@@ -492,11 +597,11 @@ FilterBar :: ~FilterBar ()
 ***/
 
 void
-FilterBar :: refreshPref (int key)
+FilterBar::refreshPref (int key)
 {
   switch (key)
     {
-      case Prefs :: FILTER_MODE:
+      case Prefs::FILTER_MODE:
         {
           const FilterMode m = myPrefs.get<FilterMode> (key);
           QAbstractItemModel * model = myActivityCombo->model ();
@@ -505,7 +610,7 @@ FilterBar :: refreshPref (int key)
           break;
         }
 
-      case Prefs :: FILTER_TRACKERS:
+      case Prefs::FILTER_TRACKERS:
         {
           const QString tracker = myPrefs.getString (key);
           const QString name = readableHostName (tracker);
@@ -518,7 +623,7 @@ FilterBar :: refreshPref (int key)
             {
               const bool isBootstrapping = myTrackerModel->rowCount () <= 2;
               if (!isBootstrapping)
-                myPrefs.set (key, "");
+                myPrefs.set (key, QString ());
             }
           break;
         }
@@ -526,27 +631,27 @@ FilterBar :: refreshPref (int key)
 }
 
 void
-FilterBar :: onTextChanged (const QString& str)
+FilterBar::onTextChanged (const QString& str)
 {
   if (!myIsBootstrapping)
     myPrefs.set (Prefs::FILTER_TEXT, str.trimmed ());
 }
 
 void
-FilterBar :: onTrackerIndexChanged (int i)
+FilterBar::onTrackerIndexChanged (int i)
 {
   if (!myIsBootstrapping)
     {
       QString str;
       const bool isTracker = !myTrackerCombo->itemData (i,TrackerRole).toString ().isEmpty ();
-      if (!isTracker) // show all
+      if (!isTracker)
         {
-          str = "";
+          // show all
         }
       else
         {
           str = myTrackerCombo->itemData (i,TrackerRole).toString ();
-          const int pos = str.lastIndexOf ('.');
+          const int pos = str.lastIndexOf (QLatin1Char ('.'));
           if (pos >= 0)
             str.truncate (pos+1);
         }
@@ -555,7 +660,7 @@ FilterBar :: onTrackerIndexChanged (int i)
 }
 
 void
-FilterBar :: onActivityIndexChanged (int i)
+FilterBar::onActivityIndexChanged (int i)
 {
   if (!myIsBootstrapping)
     {
@@ -568,13 +673,13 @@ FilterBar :: onActivityIndexChanged (int i)
 ****
 ***/
 
-void FilterBar :: onTorrentModelReset () { recountSoon (); }
-void FilterBar :: onTorrentModelRowsInserted (const QModelIndex&, int, int) { recountSoon (); }
-void FilterBar :: onTorrentModelRowsRemoved (const QModelIndex&, int, int) { recountSoon (); }
-void FilterBar :: onTorrentModelDataChanged (const QModelIndex&, const QModelIndex&) { recountSoon (); }
+void FilterBar::onTorrentModelReset () { recountSoon (); }
+void FilterBar::onTorrentModelRowsInserted (const QModelIndex&, int, int) { recountSoon (); }
+void FilterBar::onTorrentModelRowsRemoved (const QModelIndex&, int, int) { recountSoon (); }
+void FilterBar::onTorrentModelDataChanged (const QModelIndex&, const QModelIndex&) { recountSoon (); }
 
 void
-FilterBar :: recountSoon ()
+FilterBar::recountSoon ()
 {
   if (!myRecountTimer->isActive ())
     {
@@ -583,7 +688,7 @@ FilterBar :: recountSoon ()
     }
 }
 void
-FilterBar :: recount ()
+FilterBar::recount ()
 {
   QAbstractItemModel * model = myActivityCombo->model ();
 
@@ -604,13 +709,13 @@ FilterBar :: recount ()
 }
 
 QString
-FilterBar :: getCountString (int n) const
+FilterBar::getCountString (int n) const
 {
-  return QString ("%L1").arg (n);
+  return QString::fromLatin1 ("%L1").arg (n);
 }
 
 void
-FilterBar :: refreshCountLabel ()
+FilterBar::refreshCountLabel ()
 {
   const int visibleCount = myFilter.rowCount ();
   const int trackerCount = myTrackerCombo->currentCount ();

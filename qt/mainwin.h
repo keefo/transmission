@@ -4,7 +4,7 @@
  * It may be used under the GNU GPL versions 2 or 3
  * or any future license endorsed by Mnemosyne LLC.
  *
- * $Id$
+ * $Id: mainwin.h 14460 2015-01-25 15:47:03Z mikedld $
  */
 
 #ifndef MAIN_WINDOW_H
@@ -15,6 +15,7 @@
 #include <QIcon>
 #include <QMainWindow>
 #include <QMap>
+#include <QPointer>
 #include <QPushButton>
 #include <QSet>
 #include <QSystemTrayIcon>
@@ -57,7 +58,7 @@ class TrMainWindow: public QMainWindow
   private:
     time_t myLastFullUpdateTime;
     QDialog * mySessionDialog;
-    QDialog * myPrefsDialog;
+    QPointer<QDialog> myPrefsDialog;
     QDialog * myAboutDialog;
     QDialog * myStatsDialog;
     Details * myDetailsDialog;
@@ -69,8 +70,6 @@ class TrMainWindow: public QMainWindow
     Prefs& myPrefs;
     TorrentModel& myModel;
     Ui_MainWindow ui;
-    QIcon mySpeedModeOffIcon;
-    QIcon mySpeedModeOnIcon;
     time_t myLastSendTime;
     time_t myLastReadTime;
     QTimer myNetworkTimer;
@@ -93,7 +92,6 @@ class TrMainWindow: public QMainWindow
     QWidgetList myHidden;
 
   private slots:
-    void onPrefsDestroyed ();
     void openPreferences ();
     void onDetailsDestroyed ();
     void showTotalRatio ();
@@ -121,7 +119,7 @@ class TrMainWindow: public QMainWindow
     void dataReadProgress ();
     void dataSendProgress ();
     void onError (QNetworkReply::NetworkError);
-    void errorMessage (const QString);
+    void errorMessage (const QString&);
     void toggleWindows (bool doShow);
     void onSetPrefs ();
     void onSetPrefs (bool);
@@ -145,17 +143,11 @@ class TrMainWindow: public QMainWindow
     QWidget * myFilterBar;
 
   private:
-    QMenu * createOptionsMenu (void);
-    QWidget * createStatusBar (void);
-    QWidget * myStatusBar;
-    QPushButton * myAltSpeedButton;
+    QMenu * createOptionsMenu ();
+    QMenu * createStatsModeMenu ();
+    void initStatusBar ();
+
     QAction * myAltSpeedAction;
-    QPushButton * myOptionsButton;
-    QPushButton * myStatsModeButton;
-    QLabel * myStatsLabel;
-    QLabel * myDownloadSpeedLabel;
-    QLabel * myUploadSpeedLabel;
-    QLabel * myNetworkLabel;
     QString myErrorMessage;
 
   public slots:

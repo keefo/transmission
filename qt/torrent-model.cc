@@ -1,10 +1,10 @@
 /*
  * This file Copyright (C) 2009-2014 Mnemosyne LLC
  *
- * It may be used under the GNU Public License v2 or v3 licenses,
+ * It may be used under the GNU GPL versions 2 or 3
  * or any future license endorsed by Mnemosyne LLC.
  *
- * $Id$
+ * $Id: torrent-model.cc 14468 2015-01-29 22:44:43Z mikedld $
  */
 
 #include <cassert>
@@ -17,7 +17,7 @@
 #include "torrent-model.h"
 
 void
-TorrentModel :: clear ()
+TorrentModel::clear ()
 {
   beginResetModel ();
 
@@ -30,7 +30,7 @@ TorrentModel :: clear ()
 }
 
 int
-TorrentModel :: rowCount (const QModelIndex& parent) const
+TorrentModel::rowCount (const QModelIndex& parent) const
 {
   Q_UNUSED (parent);
 
@@ -38,7 +38,7 @@ TorrentModel :: rowCount (const QModelIndex& parent) const
 }
 
 QVariant
-TorrentModel :: data (const QModelIndex& index, int role) const
+TorrentModel::data (const QModelIndex& index, int role) const
 {
   QVariant var;
 
@@ -73,19 +73,19 @@ TorrentModel :: data (const QModelIndex& index, int role) const
 ***/
 
 void
-TorrentModel :: addTorrent (Torrent * t)
+TorrentModel::addTorrent (Torrent * t)
 {
   myIdToTorrent.insert (t->id (), t);
   myIdToRow.insert (t->id (), myTorrents.size ());
   myTorrents.append (t);
 }
 
-TorrentModel :: TorrentModel (Prefs& prefs):
+TorrentModel::TorrentModel (const Prefs& prefs):
   myPrefs (prefs)
 {
 }
 
-TorrentModel :: ~TorrentModel ()
+TorrentModel::~TorrentModel ()
 {
   clear ();
 }
@@ -95,14 +95,14 @@ TorrentModel :: ~TorrentModel ()
 ***/
 
 Torrent*
-TorrentModel :: getTorrentFromId (int id)
+TorrentModel::getTorrentFromId (int id)
 {
   id_to_torrent_t::iterator it (myIdToTorrent.find (id));
   return it == myIdToTorrent.end() ? 0 : it.value ();
 }
 
 const Torrent*
-TorrentModel :: getTorrentFromId (int id) const
+TorrentModel::getTorrentFromId (int id) const
 {
   id_to_torrent_t::const_iterator it (myIdToTorrent.find (id));
   return it == myIdToTorrent.end() ? 0 : it.value ();
@@ -113,7 +113,7 @@ TorrentModel :: getTorrentFromId (int id) const
 ***/
 
 void
-TorrentModel :: onTorrentChanged (int torrentId)
+TorrentModel::onTorrentChanged (int torrentId)
 {
   const int row (myIdToRow.value (torrentId, -1));
   if (row >= 0)
@@ -124,7 +124,7 @@ TorrentModel :: onTorrentChanged (int torrentId)
 }
 
 void
-TorrentModel :: removeTorrents (tr_variant * torrents)
+TorrentModel::removeTorrents (tr_variant * torrents)
 {
   int i = 0;
   tr_variant * child;
@@ -137,13 +137,12 @@ TorrentModel :: removeTorrents (tr_variant * torrents)
 }
 
 void
-TorrentModel :: updateTorrents (tr_variant * torrents, bool isCompleteList)
+TorrentModel::updateTorrents (tr_variant * torrents, bool isCompleteList)
 {
   QList<Torrent*> newTorrents;
   QSet<int> oldIds;
   QSet<int> addIds;
   QSet<int> newIds;
-  int updatedCount = 0;
 
   if  (isCompleteList)
     oldIds = getIds ();
@@ -172,7 +171,6 @@ TorrentModel :: updateTorrents (tr_variant * torrents, bool isCompleteList)
               else
                 {
                   tor->update (child);
-                  ++updatedCount;
                   if (tor->isMagnet() && tor->hasMetadata())
                     {
                       addIds.insert (tor->id());
@@ -213,7 +211,7 @@ TorrentModel :: updateTorrents (tr_variant * torrents, bool isCompleteList)
 }
 
 void
-TorrentModel :: removeTorrent (int id)
+TorrentModel::removeTorrent (int id)
 {
   const int row = myIdToRow.value (id, -1);
   if (row >= 0)
@@ -235,10 +233,10 @@ TorrentModel :: removeTorrent (int id)
 }
 
 void
-TorrentModel :: getTransferSpeed (Speed   & uploadSpeed,
-                                  size_t  & uploadPeerCount,
-                                  Speed   & downloadSpeed,
-                                  size_t  & downloadPeerCount)
+TorrentModel::getTransferSpeed (Speed   & uploadSpeed,
+                                size_t  & uploadPeerCount,
+                                Speed   & downloadSpeed,
+                                size_t  & downloadPeerCount)
 {
   Speed upSpeed, downSpeed;
   size_t upCount=0, downCount=0;
@@ -259,7 +257,7 @@ TorrentModel :: getTransferSpeed (Speed   & uploadSpeed,
 }
 
 QSet<int>
-TorrentModel :: getIds () const
+TorrentModel::getIds () const
 {
   QSet<int> ids;
 
@@ -271,7 +269,7 @@ TorrentModel :: getIds () const
 }
 
 bool
-TorrentModel :: hasTorrent (const QString& hashString) const
+TorrentModel::hasTorrent (const QString& hashString) const
 {
   foreach (const Torrent * tor, myTorrents)
     if (tor->hashString () == hashString)

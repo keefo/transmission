@@ -1,5 +1,5 @@
 /******************************************************************************
- * $Id$
+ * $Id: MessageWindowController.m 13870 2013-01-26 19:17:58Z livings124 $
  *
  * Copyright (c) 2006-2012 Transmission authors and contributors
  *

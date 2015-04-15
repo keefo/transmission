@@ -1,23 +1,23 @@
 /*
  * This file Copyright (C) 2012-2014 Mnemosyne LLC
  *
- * It may be used under the GNU Public License v2 or v3 licenses,
+ * It may be used under the GNU GPL versions 2 or 3
  * or any future license endorsed by Mnemosyne LLC.
  *
- * $Id$
+ * $Id: add-data.cc 14404 2014-12-27 14:07:14Z mikedld $
  */
 
 #include <QFile>
 #include <QDir>
 
 #include <libtransmission/transmission.h>
-#include <libtransmission/utils.h> // tr_base64_encode()
+#include <libtransmission/crypto-utils.h> // tr_base64_encode()
 
 #include "add-data.h"
 #include "utils.h"
 
 int
-AddData :: set (const QString& key)
+AddData::set (const QString& key)
 {
   if (Utils::isMagnetLink (key))
     {
@@ -46,11 +46,11 @@ AddData :: set (const QString& key)
     }
   else
     {
-      int len;
-      char * raw = tr_base64_decode (key.toUtf8().constData(), key.toUtf8().size(), &len);
+      size_t len;
+      void * raw = tr_base64_decode (key.toUtf8().constData(), key.toUtf8().size(), &len);
       if (raw)
         {
-          metainfo.append (raw, len);
+          metainfo.append (static_cast<const char*> (raw), (int) len);
           tr_free (raw);
           type = METAINFO;
         }
@@ -64,15 +64,15 @@ AddData :: set (const QString& key)
 }
 
 QByteArray
-AddData :: toBase64 () const
+AddData::toBase64 () const
 {
   QByteArray ret;
 
   if (!metainfo.isEmpty ())
     {
-      int len = 0;
-      char * b64 = tr_base64_encode (metainfo.constData(), metainfo.size(), &len);
-      ret = QByteArray (b64, len);
+      size_t len;
+      void * b64 = tr_base64_encode (metainfo.constData(), metainfo.size(), &len);
+      ret = QByteArray (static_cast<const char*> (b64), (int) len);
       tr_free (b64);
     }
 
@@ -80,7 +80,7 @@ AddData :: toBase64 () const
 }
 
 QString
-AddData :: readableName () const
+AddData::readableName () const
 {
   QString ret;
 
@@ -102,7 +102,7 @@ AddData :: readableName () const
         {
           tr_info inf;
           tr_ctor * ctor = tr_ctorNew (NULL);
-          tr_ctorSetMetainfo (ctor, (const quint8*)metainfo.constData(), metainfo.size());
+          tr_ctorSetMetainfo (ctor, reinterpret_cast<const quint8*> (metainfo.constData()), metainfo.size());
           if (tr_torrentParse (ctor, &inf) == TR_PARSE_OK )
             {
               ret = QString::fromUtf8 (inf.name); // metainfo is required to be UTF-8

@@ -1,5 +1,5 @@
 /******************************************************************************
- * $Id$
+ * $Id: NSApplicationAdditions.m 14340 2014-10-16 13:01:17Z livings124 $
  *
  * Copyright (c) 2009-2012 Transmission authors and contributors
  *
@@ -33,7 +33,12 @@
 
 - (BOOL) isOnMountainLionOrBetter
 {
-	return floor(NSAppKitVersionNumber) > NSAppKitVersionNumber10_7;
+    return floor(NSAppKitVersionNumber) > NSAppKitVersionNumber10_7;
+}
+
+- (BOOL) isOnYosemiteOrBetter
+{
+    return floor(NSAppKitVersionNumber) > NSAppKitVersionNumber10_9;
 }
 
 @end

@@ -4,7 +4,7 @@
  * It may be used under the GNU GPL versions 2 or 3
  * or any future license endorsed by Mnemosyne LLC.
  *
- * $Id$
+ * $Id: peer-io.c 14479 2015-03-18 07:34:26Z mikedld $
  */
 
 #include <assert.h>
@@ -20,7 +20,6 @@
 #include "transmission.h"
 #include "session.h"
 #include "bandwidth.h"
-#include "crypto.h"
 #include "log.h"
 #include "net.h"
 #include "peer-common.h" /* MAX_BLOCK_SIZE */
@@ -30,10 +29,14 @@
 #include "utils.h"
 
 
-#ifdef WIN32
+#ifdef _WIN32
+ #undef  EAGAIN
  #define EAGAIN       WSAEWOULDBLOCK
+ #undef  EINTR
  #define EINTR        WSAEINTR
+ #undef  EINPROGRESS
  #define EINPROGRESS  WSAEINPROGRESS
+ #undef  EPIPE
  #define EPIPE        WSAECONNRESET
 #endif
 
@@ -155,7 +158,7 @@ didWriteWrapper (tr_peerIo * io, unsigned int bytes_transferred)
         const unsigned int payload = MIN (next->length, bytes_transferred);
         /* For uTP sockets, the overhead is computed in utp_on_overhead. */
         const unsigned int overhead =
-            io->socket ? guessPacketOverhead (payload) : 0;
+            io->socket != TR_BAD_SOCKET ? guessPacketOverhead (payload) : 0;
         const uint64_t now = tr_time_msec ();
 
         tr_bandwidthUsed (&io->bandwidth, TR_UP, payload, next->isPieceData, now);
@@ -179,8 +182,8 @@ didWriteWrapper (tr_peerIo * io, unsigned int bytes_transferred)
 static void
 canReadWrapper (tr_peerIo * io)
 {
-    bool err = 0;
-    bool done = 0;
+    bool err = false;
+    bool done = false;
     tr_session * session;
 
     dbgmsg (io, "canRead");
@@ -221,15 +224,15 @@ canReadWrapper (tr_peerIo * io)
                 case READ_NOW:
                     if (evbuffer_get_length (io->inbuf))
                         continue;
-                    done = 1;
+                    done = true;
                     break;
 
                 case READ_LATER:
-                    done = 1;
+                    done = true;
                     break;
 
                 case READ_ERR:
-                    err = 1;
+                    err = true;
                     break;
             }
 
@@ -256,7 +259,7 @@ event_read_cb (evutil_socket_t fd, short event UNUSED, void * vio)
     const unsigned int max = 256 * 1024;
 
     assert (tr_isPeerIo (io));
-    assert (io->socket >= 0);
+    assert (io->socket != TR_BAD_SOCKET);
 
     io->pendingEvents &= ~EV_READ;
 
@@ -333,7 +336,7 @@ event_write_cb (evutil_socket_t fd, short event UNUSED, void * vio)
     char errstr[1024];
 
     assert (tr_isPeerIo (io));
-    assert (io->socket >= 0);
+    assert (io->socket != TR_BAD_SOCKET);
 
     io->pendingEvents &= ~EV_WRITE;
 
@@ -390,7 +393,8 @@ event_write_cb (evutil_socket_t fd, short event UNUSED, void * vio)
 **/
 
 static void
-maybeSetCongestionAlgorithm (int socket, const char * algorithm)
+maybeSetCongestionAlgorithm (tr_socket_t   socket,
+                             const char  * algorithm)
 {
     if (algorithm && *algorithm)
     {
@@ -591,7 +595,7 @@ tr_peerIoNew (tr_session       * session,
               const uint8_t    * torrentHash,
               bool               isIncoming,
               bool               isSeed,
-              int                socket,
+              tr_socket_t        socket,
               struct UTPSocket * utp_socket)
 {
     tr_peerIo * io;
@@ -601,12 +605,12 @@ tr_peerIoNew (tr_session       * session,
     assert (tr_isBool (isIncoming));
     assert (tr_isBool (isSeed));
     assert (tr_amInEventThread (session));
-    assert ((socket < 0) == (utp_socket != NULL));
+    assert ((socket == TR_BAD_SOCKET) == (utp_socket != NULL));
 #ifndef WITH_UTP
-    assert (socket >= 0);
+    assert (socket != TR_BAD_SOCKET);
 #endif
 
-    if (socket >= 0) {
+    if (socket != TR_BAD_SOCKET) {
         tr_netSetTOS (socket, session->peerSocketTOS);
         maybeSetCongestionAlgorithm (socket, session->peer_congestion_algorithm);
     }
@@ -628,9 +632,9 @@ tr_peerIoNew (tr_session       * session,
     tr_bandwidthConstruct (&io->bandwidth, session, parent);
     tr_bandwidthSetPeer (&io->bandwidth, io);
     dbgmsg (io, "bandwidth is %p; its parent is %p", (void*)&io->bandwidth, (void*)parent);
-    dbgmsg (io, "socket is %d, utp_socket is %p", socket, (void*)utp_socket);
+    dbgmsg (io, "socket is %"TR_PRI_SOCK", utp_socket is %p", socket, (void*)utp_socket);
 
-    if (io->socket >= 0) {
+    if (io->socket != TR_BAD_SOCKET) {
         io->event_read = event_new (session->event_base,
                                     io->socket, EV_READ, event_read_cb, io);
         io->event_write = event_new (session->event_base,
@@ -658,7 +662,7 @@ tr_peerIoNewIncoming (tr_session        * session,
                       tr_bandwidth      * parent,
                       const tr_address  * addr,
                       tr_port             port,
-                      int                 fd,
+                      tr_socket_t         fd,
                       struct UTPSocket  * utp_socket)
 {
     assert (session);
@@ -677,7 +681,7 @@ tr_peerIoNewOutgoing (tr_session        * session,
                       bool                isSeed,
                       bool                utp)
 {
-    int fd = -1;
+    tr_socket_t fd = TR_BAD_SOCKET;
     struct UTPSocket * utp_socket = NULL;
 
     assert (session);
@@ -689,10 +693,10 @@ tr_peerIoNewOutgoing (tr_session        * session,
 
     if (!utp_socket) {
         fd = tr_netOpenPeerSocket (session, addr, port, isSeed);
-        dbgmsg (NULL, "tr_netOpenPeerSocket returned fd %d", fd);
+        dbgmsg (NULL, "tr_netOpenPeerSocket returned fd %"TR_PRI_SOCK, fd);
     }
 
-    if (fd < 0 && utp_socket == NULL)
+    if (fd == TR_BAD_SOCKET && utp_socket == NULL)
         return NULL;
 
     return tr_peerIoNew (session, parent, addr, port,
@@ -710,7 +714,7 @@ event_enable (tr_peerIo * io, short event)
     assert (io->session != NULL);
     assert (io->session->events != NULL);
 
-    if (io->socket >= 0)
+    if (io->socket != TR_BAD_SOCKET)
     {
         assert (event_initialized (io->event_read));
         assert (event_initialized (io->event_write));
@@ -719,7 +723,7 @@ event_enable (tr_peerIo * io, short event)
     if ((event & EV_READ) && ! (io->pendingEvents & EV_READ))
     {
         dbgmsg (io, "enabling ready-to-read polling");
-        if (io->socket >= 0)
+        if (io->socket != TR_BAD_SOCKET)
             event_add (io->event_read, NULL);
         io->pendingEvents |= EV_READ;
     }
@@ -727,7 +731,7 @@ event_enable (tr_peerIo * io, short event)
     if ((event & EV_WRITE) && ! (io->pendingEvents & EV_WRITE))
     {
         dbgmsg (io, "enabling ready-to-write polling");
-        if (io->socket >= 0)
+        if (io->socket != TR_BAD_SOCKET)
             event_add (io->event_write, NULL);
         io->pendingEvents |= EV_WRITE;
     }
@@ -740,7 +744,7 @@ event_disable (struct tr_peerIo * io, short event)
     assert (io->session != NULL);
     assert (io->session->events != NULL);
 
-    if (io->socket >= 0)
+    if (io->socket != TR_BAD_SOCKET)
     {
         assert (event_initialized (io->event_read));
         assert (event_initialized (io->event_write));
@@ -749,7 +753,7 @@ event_disable (struct tr_peerIo * io, short event)
     if ((event & EV_READ) && (io->pendingEvents & EV_READ))
     {
         dbgmsg (io, "disabling ready-to-read polling");
-        if (io->socket >= 0)
+        if (io->socket != TR_BAD_SOCKET)
             event_del (io->event_read);
         io->pendingEvents &= ~EV_READ;
     }
@@ -757,7 +761,7 @@ event_disable (struct tr_peerIo * io, short event)
     if ((event & EV_WRITE) && (io->pendingEvents & EV_WRITE))
     {
         dbgmsg (io, "disabling ready-to-write polling");
-        if (io->socket >= 0)
+        if (io->socket != TR_BAD_SOCKET)
             event_del (io->event_write);
         io->pendingEvents &= ~EV_WRITE;
     }
@@ -787,9 +791,9 @@ tr_peerIoSetEnabled (tr_peerIo    * io,
 static void
 io_close_socket (tr_peerIo * io)
 {
-    if (io->socket >= 0) {
+    if (io->socket != TR_BAD_SOCKET) {
         tr_netClose (io->session, io->socket);
-        io->socket = -1;
+        io->socket = TR_BAD_SOCKET;
     }
 
     if (io->event_read != NULL) {
@@ -939,7 +943,7 @@ tr_peerIoReconnect (tr_peerIo * io)
     io->event_read = event_new (session->event_base, io->socket, EV_READ, event_read_cb, io);
     io->event_write = event_new (session->event_base, io->socket, EV_WRITE, event_write_cb, io);
 
-    if (io->socket >= 0)
+    if (io->socket != TR_BAD_SOCKET)
     {
         event_enable (io, pendingEvents);
         tr_netSetTOS (io->socket, session->peerSocketTOS);
@@ -971,7 +975,7 @@ tr_peerIoGetTorrentHash (tr_peerIo * io)
     return tr_cryptoGetTorrentHash (&io->crypto);
 }
 
-int
+bool
 tr_peerIoHasTorrentHash (const tr_peerIo * io)
 {
     assert (tr_isPeerIo (io));
@@ -1174,7 +1178,7 @@ tr_peerIoReadBytes (tr_peerIo * io, struct evbuffer * inbuf, void * bytes, size_
             break;
 
         default:
-            assert (0);
+            assert (false);
     }
 }
 

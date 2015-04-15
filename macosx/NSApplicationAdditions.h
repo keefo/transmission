@@ -1,5 +1,5 @@
 /******************************************************************************
- * $Id$
+ * $Id: NSApplicationAdditions.h 14340 2014-10-16 13:01:17Z livings124 $
  *
  * Copyright (c) 2009-2012 Transmission authors and contributors
  *
@@ -32,5 +32,6 @@
 
 - (BOOL) isOnLionOrBetter;
 - (BOOL) isOnMountainLionOrBetter;
+- (BOOL) isOnYosemiteOrBetter;
 
 @end

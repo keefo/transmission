@@ -4,7 +4,7 @@
  * It may be used under the GNU GPL versions 2 or 3
  * or any future license endorsed by Mnemosyne LLC.
  *
- * $Id$
+ * $Id: cache.c 14476 2015-03-15 11:43:32Z mikedld $
  */
 
 #include <stdlib.h> /* qsort () */
@@ -72,7 +72,7 @@ struct run_info
   time_t last_block_time;
   bool is_multi_piece;
   bool is_piece_done;
-  unsigned len;
+  unsigned int len;
 };
 
 

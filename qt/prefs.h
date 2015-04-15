@@ -4,7 +4,7 @@
  * It may be used under the GNU GPL versions 2 or 3
  * or any future license endorsed by Mnemosyne LLC.
  *
- * $Id$
+ * $Id: prefs.h 14465 2015-01-28 23:08:41Z mikedld $
  */
 
 #ifndef QTR_PREFS_H
@@ -27,7 +27,7 @@ extern "C"
 
 class Prefs: public QObject
 {
-    Q_OBJECT;
+    Q_OBJECT
 
   public:
 
@@ -144,9 +144,11 @@ class Prefs: public QObject
 
   private:
     QSet<int> myTemporaryPrefs;
-    QString myConfigDir;
+    QString const myConfigDir;
     mutable QVariant myValues[PREFS_COUNT];
-    void initDefaults (struct tr_variant*);
+    void initDefaults (tr_variant *);
+
+    void set (int key, const char * value);
 
   public:
     bool isCore (int key) const { return FIRST_CORE_PREF<=key && key<=LAST_CORE_PREF; }
@@ -156,7 +158,7 @@ class Prefs: public QObject
     int type (int i) const { return myItems[i].type; }
     const QVariant& variant (int i) const { return myValues[i]; }
 
-    Prefs (const char * configDir);
+    Prefs (const QString& configDir);
     ~Prefs ();
 
     int getInt (int key) const;
@@ -166,9 +168,6 @@ class Prefs: public QObject
     QDateTime getDateTime (int key) const;
 
     template<typename T> T get (int key) const { return myValues[key].value<T>(); }
-
-    void set (int key, char * value) { set (key, QString::fromUtf8 (value)); }
-    void set (int key, const char * value) { set (key, QString::fromUtf8 (value)); }
 
     template<typename T> void set (int key, const T& value)
     {

@@ -1,5 +1,5 @@
 /******************************************************************************
- * $Id$
+ * $Id: InfoWindowController.m 13873 2013-01-26 19:52:08Z livings124 $
  *
  * Copyright (c) 2006-2012 Transmission authors and contributors
  *

@@ -1,6 +1,6 @@
 /******************************************************************************
  *
- * $Id$
+ * $Id: net.c 14482 2015-03-26 18:29:11Z mikedld $
  *
  * Copyright (c) Transmission authors and contributors
  *
@@ -29,8 +29,7 @@
 
 #include <sys/types.h>
 
-#ifdef WIN32
- #define _WIN32_WINNT   0x0501
+#ifdef _WIN32
  #include <ws2tcpip.h>
 #else
  #include <netinet/tcp.h>       /* TCP_CONGESTION */
@@ -59,11 +58,11 @@ const tr_address tr_inaddr_any = { TR_AF_INET, { { { { INADDR_ANY, 0x00, 0x00, 0
 void
 tr_netInit (void)
 {
-    static int initialized = false;
+    static bool initialized = false;
 
     if (!initialized)
     {
-#ifdef WIN32
+#ifdef _WIN32
         WSADATA wsaData;
         WSAStartup (MAKEWORD (2, 2), &wsaData);
 #endif
@@ -75,8 +74,8 @@ char *
 tr_net_strerror (char * buf, size_t buflen, int err)
 {
     *buf = '\0';
-#ifdef WIN32
-    FormatMessage (FORMAT_MESSAGE_FROM_SYSTEM, NULL, err, 0, buf, buflen, NULL);
+#ifdef _WIN32
+    FormatMessageA (FORMAT_MESSAGE_FROM_SYSTEM, NULL, err, 0, buf, buflen, NULL);
 #else
     tr_strlcpy (buf, tr_strerror (err), buflen);
 #endif
@@ -146,21 +145,23 @@ tr_address_compare (const tr_address * a, const tr_address * b)
  **********************************************************************/
 
 int
-tr_netSetTOS (int s, int tos)
+tr_netSetTOS (tr_socket_t s,
+              int         tos)
 {
 #ifdef IP_TOS
-    return setsockopt (s, IPPROTO_IP, IP_TOS, (char*)&tos, sizeof (tos));
+    return setsockopt (s, IPPROTO_IP, IP_TOS, (const void *) &tos, sizeof (tos));
 #else
     return 0;
 #endif
 }
 
 int
-tr_netSetCongestionControl (int s UNUSED, const char *algorithm UNUSED)
+tr_netSetCongestionControl (tr_socket_t   s UNUSED,
+                            const char  * algorithm UNUSED)
 {
 #ifdef TCP_CONGESTION
     return setsockopt (s, IPPROTO_TCP, TCP_CONGESTION,
-                       algorithm, strlen (algorithm) + 1);
+                       (const void *) algorithm, strlen (algorithm) + 1);
 #else
     errno = ENOSYS;
     return -1;
@@ -223,14 +224,14 @@ setup_sockaddr (const tr_address        * addr,
     }
 }
 
-int
+tr_socket_t
 tr_netOpenPeerSocket (tr_session        * session,
                       const tr_address  * addr,
                       tr_port             port,
                       bool                clientIsSeed)
 {
     static const int domains[NUM_TR_AF_INET_TYPES] = { AF_INET, AF_INET6 };
-    int                     s;
+    tr_socket_t             s;
     struct sockaddr_storage sock;
     socklen_t               addrlen;
     const tr_address      * source_addr;
@@ -240,22 +241,22 @@ tr_netOpenPeerSocket (tr_session        * session,
     assert (tr_address_is_valid (addr));
 
     if (!tr_address_is_valid_for_peers (addr, port))
-        return -EINVAL;
+        return TR_BAD_SOCKET; /* -EINVAL */
 
     s = tr_fdSocketCreate (session, domains[addr->type], SOCK_STREAM);
-    if (s < 0)
-        return -1;
+    if (s == TR_BAD_SOCKET)
+        return TR_BAD_SOCKET;
 
     /* seeds don't need much of a read buffer... */
     if (clientIsSeed) {
         int n = 8192;
-        if (setsockopt (s, SOL_SOCKET, SO_RCVBUF, &n, sizeof (n)))
-            tr_logAddInfo ("Unable to set SO_RCVBUF on socket %d: %s", s, tr_strerror (sockerrno));
+        if (setsockopt (s, SOL_SOCKET, SO_RCVBUF, (const void *) &n, sizeof (n)))
+            tr_logAddInfo ("Unable to set SO_RCVBUF on socket %"TR_PRI_SOCK": %s", s, tr_strerror (sockerrno));
     }
 
     if (evutil_make_socket_nonblocking (s) < 0) {
         tr_netClose (session, s);
-        return -1;
+        return TR_BAD_SOCKET;
     }
 
     addrlen = setup_sockaddr (addr, port, &sock);
@@ -266,15 +267,15 @@ tr_netOpenPeerSocket (tr_session        * session,
     sourcelen = setup_sockaddr (source_addr, 0, &source_sock);
     if (bind (s, (struct sockaddr *) &source_sock, sourcelen))
     {
-        tr_logAddError (_("Couldn't set source address %s on %d: %s"),
+        tr_logAddError (_("Couldn't set source address %s on %"TR_PRI_SOCK": %s"),
                 tr_address_to_string (source_addr), s, tr_strerror (errno));
         tr_netClose (session, s);
-        return -errno;
+        return TR_BAD_SOCKET; /* -errno */
     }
 
     if ((connect (s, (struct sockaddr *) &sock,
                   addrlen) < 0)
-#ifdef WIN32
+#ifdef _WIN32
       && (sockerrno != WSAEWOULDBLOCK)
 #endif
       && (sockerrno != EINPROGRESS))
@@ -283,14 +284,14 @@ tr_netOpenPeerSocket (tr_session        * session,
         tmperrno = sockerrno;
         if ((tmperrno != ENETUNREACH && tmperrno != EHOSTUNREACH)
                 || addr->type == TR_AF_INET)
-            tr_logAddError (_("Couldn't connect socket %d to %s, port %d (errno %d - %s)"),
+            tr_logAddError (_("Couldn't connect socket %"TR_PRI_SOCK" to %s, port %d (errno %d - %s)"),
                     s, tr_address_to_string (addr), (int)ntohs (port), tmperrno,
                     tr_strerror (tmperrno));
         tr_netClose (session, s);
-        s = -tmperrno;
+        s = TR_BAD_SOCKET; /* -tmperrno */
     }
 
-    tr_logAddDeep (__FILE__, __LINE__, NULL, "New OUTGOING connection %d (%s)",
+    tr_logAddDeep (__FILE__, __LINE__, NULL, "New OUTGOING connection %"TR_PRI_SOCK" (%s)",
                    s, tr_peerIoAddrStr (addr, port));
 
     return s;
@@ -314,39 +315,43 @@ tr_netOpenPeerUTPSocket (tr_session        * session,
   return ret;
 }
 
-static int
-tr_netBindTCPImpl (const tr_address * addr, tr_port port, bool suppressMsgs, int * errOut)
+static tr_socket_t
+tr_netBindTCPImpl (const tr_address * addr,
+                   tr_port            port,
+                   bool               suppressMsgs,
+                   int              * errOut)
 {
     static const int domains[NUM_TR_AF_INET_TYPES] = { AF_INET, AF_INET6 };
     struct sockaddr_storage sock;
-    int fd;
+    tr_socket_t fd;
     int addrlen;
     int optval;
 
     assert (tr_address_is_valid (addr));
 
     fd = socket (domains[addr->type], SOCK_STREAM, 0);
-    if (fd < 0) {
+    if (fd == TR_BAD_SOCKET) {
         *errOut = sockerrno;
-        return -1;
+        return TR_BAD_SOCKET;
     }
 
     if (evutil_make_socket_nonblocking (fd) < 0) {
         *errOut = sockerrno;
         tr_netCloseSocket (fd);
-        return -1;
+        return TR_BAD_SOCKET;
     }
 
     optval = 1;
-    setsockopt (fd, SOL_SOCKET, SO_KEEPALIVE, &optval, sizeof (optval));
-    setsockopt (fd, SOL_SOCKET, SO_REUSEADDR, &optval, sizeof (optval));
+    setsockopt (fd, SOL_SOCKET, SO_KEEPALIVE, (const void *) &optval, sizeof (optval));
+    setsockopt (fd, SOL_SOCKET, SO_REUSEADDR, (const void *) &optval, sizeof (optval));
 
 #ifdef IPV6_V6ONLY
     if (addr->type == TR_AF_INET6)
-        if (setsockopt (fd, IPPROTO_IPV6, IPV6_V6ONLY, &optval, sizeof (optval)) == -1)
+        if (setsockopt (fd, IPPROTO_IPV6, IPV6_V6ONLY, (const void *) &optval, sizeof (optval)) == -1)
             if (sockerrno != ENOPROTOOPT) { /* if the kernel doesn't support it, ignore it */
                 *errOut = sockerrno;
-                return -1;
+                tr_netCloseSocket (fd);
+                return TR_BAD_SOCKET;
             }
 #endif
 
@@ -372,23 +377,25 @@ tr_netBindTCPImpl (const tr_address * addr, tr_port port, bool suppressMsgs, int
         }
         tr_netCloseSocket (fd);
         *errOut = err;
-        return -1;
+        return TR_BAD_SOCKET;
     }
 
     if (!suppressMsgs)
-        tr_logAddDebug ("Bound socket %d to port %d on %s", fd, port, tr_address_to_string (addr));
+        tr_logAddDebug ("Bound socket %"TR_PRI_SOCK" to port %d on %s", fd, port, tr_address_to_string (addr));
 
     if (listen (fd, 128) == -1) {
         *errOut = sockerrno;
         tr_netCloseSocket (fd);
-        return -1;
+        return TR_BAD_SOCKET;
     }
 
     return fd;
 }
 
-int
-tr_netBindTCP (const tr_address * addr, tr_port port, bool suppressMsgs)
+tr_socket_t
+tr_netBindTCP (const tr_address * addr,
+               tr_port            port,
+               bool               suppressMsgs)
 {
     int unused;
     return tr_netBindTCPImpl (addr, port, suppressMsgs, &unused);
@@ -403,10 +410,10 @@ tr_net_hasIPv6 (tr_port port)
     if (!alreadyDone)
     {
         int err;
-        int fd = tr_netBindTCPImpl (&tr_in6addr_any, port, true, &err);
-        if (fd >= 0 || err != EAFNOSUPPORT) /* we support ipv6 */
+        tr_socket_t fd = tr_netBindTCPImpl (&tr_in6addr_any, port, true, &err);
+        if (fd != TR_BAD_SOCKET || err != EAFNOSUPPORT) /* we support ipv6 */
             result = true;
-        if (fd >= 0)
+        if (fd != TR_BAD_SOCKET)
             tr_netCloseSocket (fd);
         alreadyDone = true;
     }
@@ -414,30 +421,31 @@ tr_net_hasIPv6 (tr_port port)
     return result;
 }
 
-int
+tr_socket_t
 tr_netAccept (tr_session  * session,
-              int           b,
+              tr_socket_t   b,
               tr_address  * addr,
               tr_port     * port)
 {
-    int fd = tr_fdSocketAccept (session, b, addr, port);
+    tr_socket_t fd = tr_fdSocketAccept (session, b, addr, port);
 
-    if (fd>=0 && evutil_make_socket_nonblocking (fd)<0) {
+    if (fd != TR_BAD_SOCKET && evutil_make_socket_nonblocking (fd) < 0) {
         tr_netClose (session, fd);
-        fd = -1;
+        fd = TR_BAD_SOCKET;
     }
 
     return fd;
 }
 
 void
-tr_netCloseSocket (int fd)
+tr_netCloseSocket (tr_socket_t fd)
 {
     evutil_closesocket (fd);
 }
 
 void
-tr_netClose (tr_session * session, int s)
+tr_netClose (tr_session  * session,
+             tr_socket_t   s)
 {
     tr_fdSocketClose (session, s);
 }
@@ -458,10 +466,11 @@ get_source_address (const struct sockaddr  * dst,
                     struct sockaddr        * src,
                     socklen_t              * src_len)
 {
-    int s, rc, save;
+    tr_socket_t s;
+    int rc, save;
 
     s = socket (dst->sa_family, SOCK_DGRAM, 0);
-    if (s < 0)
+    if (s == TR_BAD_SOCKET)
         goto fail;
 
     /* Since it's a UDP socket, this doesn't actually send any packets. */
@@ -574,7 +583,7 @@ tr_globalIPv6 (void)
 {
     static unsigned char ipv6[16];
     static time_t last_time = 0;
-    static int have_ipv6 = 0;
+    static bool have_ipv6 = false;
     const time_t now = tr_time ();
 
     /* Re-check every half hour */

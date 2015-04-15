@@ -4,27 +4,22 @@
  * It may be used under the GNU GPL versions 2 or 3
  * or any future license endorsed by Mnemosyne LLC.
  *
- * $Id$
+ * $Id: move-test.c 14428 2015-01-02 11:15:31Z mikedld $
  */
 
 #include <assert.h>
-#include <errno.h>
 #include <stdio.h> /* remove() */
 #include <string.h> /* strcmp() */
 #include <stdio.h>
-
-#include <sys/types.h> /* stat() */
-#include <sys/stat.h> /* stat() */
-#include <unistd.h> /* stat(), sync() */
 
 #include <event2/buffer.h>
 
 #include "transmission.h"
 #include "cache.h"
+#include "file.h"
 #include "resume.h"
 #include "trevent.h"
 #include "torrent.h" /* tr_isTorrent() */
-#include "utils.h" /* tr_mkdirp() */
 #include "variant.h"
 
 #include "libtransmission-test.h"
@@ -70,7 +65,7 @@ test_incomplete_dir_threadfunc (void * vdata)
   tr_torrentGotBlock (data->tor, data->block);
   data->done = true;
 }
-  
+
 static int
 test_incomplete_dir_impl (const char * incomplete_dir, const char * download_dir)
 {
@@ -79,7 +74,7 @@ test_incomplete_dir_impl (const char * incomplete_dir, const char * download_dir
   tr_torrent * tor;
   tr_completeness completeness;
   const tr_completeness completeness_unset = -1;
-  const time_t deadline = time(NULL) + 5;
+  const time_t deadline = time(NULL) + 300;
   tr_variant settings;
 
   /* init the session */
@@ -178,13 +173,13 @@ test_set_location (void)
   char * target_dir;
   tr_torrent * tor;
   tr_session * session;
-  const time_t deadline = time(NULL) + 5;
+  const time_t deadline = time(NULL) + 300;
 
   /* init the session */
   session = libttest_session_init (NULL);
   target_dir = tr_buildPath (tr_sessionGetConfigDir (session), "target", NULL);
-  tr_mkdirp (target_dir, 0777);
-  
+  tr_sys_dir_create (target_dir, TR_SYS_DIR_CREATE_PARENTS, 0777, NULL);
+
   /* init a torrent. */
   tor = libttest_zero_torrent_init (session);
   libttest_zero_torrent_populate (tor, true);
@@ -203,7 +198,7 @@ test_set_location (void)
   check_int_eq (0, tr_torrentStat(tor)->leftUntilDone);
 
   /* confirm the filest really got moved */
-  sync ();
+  libttest_sync ();
   for (i=0; i<tor->info.fileCount; ++i)
     check_file_location (tor, i, tr_buildPath (target_dir, tor->info.files[i].name, NULL));
 

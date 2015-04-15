@@ -4,7 +4,7 @@
  * It may be used under the GNU GPL versions 2 or 3
  * or any future license endorsed by Mnemosyne LLC.
  *
- * $Id$
+ * $Id: peer-msgs.c 14473 2015-03-11 06:22:11Z mikedld $
  */
 
 #include <assert.h>
@@ -20,7 +20,7 @@
 #include "transmission.h"
 #include "cache.h"
 #include "completion.h"
-#include "crypto.h" /* tr_sha1 () */
+#include "file.h"
 #include "log.h"
 #include "peer-io.h"
 #include "peer-mgr.h"
@@ -32,6 +32,10 @@
 #include "utils.h"
 #include "variant.h"
 #include "version.h"
+
+#ifndef EBADMSG
+ #define EBADMSG EINVAL
+#endif
 
 /**
 ***
@@ -277,14 +281,14 @@ myDebug (const char * file, int line,
          const struct tr_peerMsgs * msgs,
          const char * fmt, ...)
 {
-  FILE * fp = tr_logGetFile ();
+  const tr_sys_file_t fp = tr_logGetFile ();
 
-  if (fp)
+  if (fp != TR_BAD_SYS_FILE)
     {
       va_list           args;
       char              timestr[64];
       struct evbuffer * buf = evbuffer_new ();
-      char *            base = tr_basename (file);
+      char *            base = tr_sys_path_basename (file, NULL);
       char *            message;
 
       evbuffer_add_printf (buf, "[%s] %s - %s [%s]: ",
@@ -295,10 +299,10 @@ myDebug (const char * file, int line,
       va_start (args, fmt);
       evbuffer_add_vprintf (buf, fmt, args);
       va_end (args);
-      evbuffer_add_printf (buf, " (%s:%d)\n", base, line);
+      evbuffer_add_printf (buf, " (%s:%d)", base, line);
 
       message = evbuffer_free_to_str (buf);
-      fputs (message, fp);
+      tr_sys_file_write_line (fp, message, NULL);
 
       tr_free (base);
       tr_free (message);
@@ -673,7 +677,7 @@ updateFastSet (tr_peerMsgs * msgs UNUSED)
 
         /* build the fast set */
         msgs->fastsetSize = tr_generateAllowedSet (msgs->fastset, numwant, inf->pieceCount, inf->hash, addr);
-        msgs->haveFastSet = 1;
+        msgs->haveFastSet = true;
 
         /* send it to the peer */
         for (i=0; i<msgs->fastsetSize; ++i)
@@ -686,7 +690,7 @@ updateFastSet (tr_peerMsgs * msgs UNUSED)
 ****  ACTIVE
 ***/
 
-static bool 
+static bool
 tr_peerMsgsCalculateActive (const tr_peerMsgs * msgs, tr_direction direction)
 {
   bool is_active;
@@ -699,8 +703,10 @@ tr_peerMsgsCalculateActive (const tr_peerMsgs * msgs, tr_direction direction)
       is_active = tr_peerMsgsIsPeerInterested (msgs)
               && !tr_peerMsgsIsPeerChoked (msgs);
 
+      /* FIXME: https://trac.transmissionbt.com/ticket/5505
       if (is_active)
         assert (!tr_peerIsSeed (&msgs->peer));
+      */
     }
   else /* TR_PEER_TO_CLIENT */
     {
@@ -927,21 +933,21 @@ sendLtepHandshake (tr_peerMsgs * msgs)
       version_quark = tr_quark_new (TR_NAME " " USERAGENT_PREFIX, -1);
 
     dbgmsg (msgs, "sending an ltep handshake");
-    msgs->clientSentLtepHandshake = 1;
+    msgs->clientSentLtepHandshake = true;
 
     /* decide if we want to advertise metadata xfer support (BEP 9) */
     if (tr_torrentIsPrivate (msgs->torrent))
-        allow_metadata_xfer = 0;
+        allow_metadata_xfer = false;
     else
-        allow_metadata_xfer = 1;
+        allow_metadata_xfer = true;
 
     /* decide if we want to advertise pex support */
     if (!tr_torrentAllowsPex (msgs->torrent))
-        allow_pex = 0;
+        allow_pex = false;
     else if (msgs->peerSentLtepHandshake)
-        allow_pex = msgs->peerSupportsPex ? 1 : 0;
+        allow_pex = msgs->peerSupportsPex;
     else
-        allow_pex = 1;
+        allow_pex = true;
 
     tr_variantInitDict (&val, 8);
     tr_variantDictAddInt (&val, TR_KEY_e, getSession (msgs)->encryptionMode != TR_CLEAR_PREFERRED);
@@ -990,7 +996,7 @@ parseLtepHandshake (tr_peerMsgs * msgs, int len, struct evbuffer * inbuf)
     memset (&pex, 0, sizeof (tr_pex));
 
     tr_peerIoReadBytes (msgs->io, inbuf, tmp, len);
-    msgs->peerSentLtepHandshake = 1;
+    msgs->peerSentLtepHandshake = true;
 
     if (tr_variantFromBenc (&val, tmp, len) || !tr_variantIsDict (&val))
     {
@@ -1010,8 +1016,8 @@ parseLtepHandshake (tr_peerMsgs * msgs, int len, struct evbuffer * inbuf)
     }
 
     /* check supported messages for utorrent pex */
-    msgs->peerSupportsPex = 0;
-    msgs->peerSupportsMetadataXfer = 0;
+    msgs->peerSupportsPex = false;
+    msgs->peerSupportsMetadataXfer = false;
 
     if (tr_variantDictFindDict (&val, TR_KEY_m, &sub)) {
         if (tr_variantDictFindInt (sub, TR_KEY_ut_pex, &i)) {
@@ -1239,13 +1245,13 @@ parseLtep (tr_peerMsgs * msgs, int msglen, struct evbuffer  * inbuf)
     else if (ltep_msgid == UT_PEX_ID)
     {
         dbgmsg (msgs, "got ut pex");
-        msgs->peerSupportsPex = 1;
+        msgs->peerSupportsPex = true;
         parseUtPex (msgs, msglen, inbuf);
     }
     else if (ltep_msgid == UT_METADATA_ID)
     {
         dbgmsg (msgs, "got ut metadata");
-        msgs->peerSupportsMetadataXfer = 1;
+        msgs->peerSupportsMetadataXfer = true;
         parseUtMetadata (msgs, msglen, inbuf);
     }
     else
@@ -1339,7 +1345,7 @@ peerMadeRequest (tr_peerMsgs * msgs, const struct peer_request * req)
     const int clientHasPiece = reqIsValid && tr_torrentPieceIsComplete (msgs->torrent, req->index);
     const int peerIsChoked = msgs->peer_is_choked;
 
-    int allow = false;
+    bool allow = false;
 
     if (!reqIsValid)
         dbgmsg (msgs, "rejecting an invalid request.");
@@ -1693,6 +1699,12 @@ clientGotBlock (tr_peerMsgs                * msgs,
     assert (msgs);
     assert (req);
 
+    if (!requestIsValid (msgs, req)) {
+        dbgmsg (msgs, "dropping invalid block %u:%u->%u",
+                req->index, req->offset, req->length);
+        return EBADMSG;
+    }
+
     if (req->length != tr_torBlockCountBytes (msgs->torrent, block)) {
         dbgmsg (msgs, "wrong block size -- expected %u, got %d",
                 tr_torBlockCountBytes (msgs->torrent, block), req->length);
@@ -1819,7 +1831,7 @@ updateDesiredRequestCount (tr_peerMsgs * msgs)
 
         /* honor the session limits, if enabled */
         if (tr_torrentUsesSessionLimits (torrent) &&
-	    tr_sessionGetActiveSpeedLimit_Bps (torrent->session, TR_PEER_TO_CLIENT, &irate_Bps))
+            tr_sessionGetActiveSpeedLimit_Bps (torrent->session, TR_PEER_TO_CLIENT, &irate_Bps))
                 rate_Bps = MIN (rate_Bps, irate_Bps);
 
         /* use this desired rate to figure out how
@@ -2459,7 +2471,7 @@ pexPulse (evutil_socket_t foo UNUSED, short bar UNUSED, void * vmsgs)
 static bool
 peermsgs_is_transferring_pieces (const struct tr_peer * peer,
                                  uint64_t               now,
-                                 tr_direction           direction, 
+                                 tr_direction           direction,
                                  unsigned int         * setme_Bps)
 {
   unsigned int Bps = 0;

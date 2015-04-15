@@ -4,7 +4,7 @@
  * It may be used under the GNU GPL versions 2 or 3
  * or any future license endorsed by Mnemosyne LLC.
  *
- * $Id$
+ * $Id: relocate.h 14418 2015-01-01 05:02:13Z mikedld $
  */
 
 #ifndef RELOCATE_DIALOG_H
@@ -12,38 +12,33 @@
 
 #include <QDialog>
 #include <QSet>
-#include <QString>
 
-class QPushButton;
-class QRadioButton;
+#include "ui_relocate.h"
+
 class Session;
-class Torrent;
 class TorrentModel;
 
 class RelocateDialog: public QDialog
 {
     Q_OBJECT
 
-  private:
-    QString myPath;
-    static bool myMoveFlag;
-
-  private:
-    Session & mySession;
-    TorrentModel& myModel;
-    QSet<int> myIds;
-    QPushButton * myDirButton;
-    QRadioButton * myMoveRadio;
+  public:
+    RelocateDialog (Session&, const TorrentModel&, const QSet<int>& ids, QWidget * parent = 0);
+    ~RelocateDialog () {}
 
   private slots:
-    void onFileSelected (const QString& path);
-    void onDirButtonClicked ();
     void onSetLocation ();
     void onMoveToggled (bool);
 
-  public:
-    RelocateDialog (Session&, TorrentModel&, const QSet<int>& ids, QWidget * parent = 0);
-    ~RelocateDialog () {}
+  private:
+    QString newLocation () const;
+
+  private:
+    Session& mySession;
+    const QSet<int> myIds;
+    Ui::RelocateDialog ui;
+
+    static bool myMoveFlag;
 };
 
 #endif

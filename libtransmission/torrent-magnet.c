@@ -4,7 +4,7 @@
  * It may be used under the GNU GPL versions 2 or 3
  * or any future license endorsed by Mnemosyne LLC.
  *
- * $Id$
+ * $Id: torrent-magnet.c 14491 2015-04-11 10:51:59Z mikedld $
  */
 
 #include <assert.h>
@@ -13,7 +13,8 @@
 #include <event2/buffer.h>
 
 #include "transmission.h"
-#include "crypto.h" /* tr_sha1 () */
+#include "crypto-utils.h" /* tr_sha1 () */
+#include "file.h"
 #include "log.h"
 #include "magnet.h"
 #include "metainfo.h"
@@ -105,7 +106,7 @@ findInfoDictOffset (const tr_torrent * tor)
   int offset = 0;
 
   /* load the file, and find the info dict's offset inside the file */
-  if ((fileContents = tr_loadFile (tor->info.torrent, &fileLen)))
+  if ((fileContents = tr_loadFile (tor->info.torrent, &fileLen, NULL)))
     {
       tr_variant top;
 
@@ -154,19 +155,19 @@ tr_torrentGetMetadataPiece (tr_torrent * tor, int piece, int * len)
 
   if (tr_torrentHasMetadata (tor))
     {
-      FILE * fp;
+      tr_sys_file_t fd;
 
       ensureInfoDictOffsetIsCached (tor);
 
       assert (tor->infoDictLength > 0);
       assert (tor->infoDictOffset >= 0);
 
-      fp = fopen (tor->info.torrent, "rb");
-      if (fp != NULL)
+      fd = tr_sys_file_open (tor->info.torrent, TR_SYS_FILE_READ, 0, NULL);
+      if (fd != TR_BAD_SYS_FILE)
         {
           const int o = piece  * METADATA_PIECE_SIZE;
 
-          if (!fseek (fp, tor->infoDictOffset + o, SEEK_SET))
+          if (tr_sys_file_seek (fd, tor->infoDictOffset + o, TR_SEEK_SET, NULL, NULL))
             {
               const int l = o + METADATA_PIECE_SIZE <= tor->infoDictLength
                           ? METADATA_PIECE_SIZE
@@ -175,8 +176,8 @@ tr_torrentGetMetadataPiece (tr_torrent * tor, int piece, int * len)
               if (0<l && l<=METADATA_PIECE_SIZE)
                 {
                   char * buf = tr_new (char, l);
-                  const int n = fread (buf, 1, l, fp);
-                  if (n == l)
+                  uint64_t n;
+                  if (tr_sys_file_read (fd, buf, l, &n, NULL) && n == (unsigned int) l)
                     {
                       *len = l;
                       ret = buf;
@@ -187,7 +188,7 @@ tr_torrentGetMetadataPiece (tr_torrent * tor, int piece, int * len)
                 }
             }
 
-          fclose (fp);
+          tr_sys_file_close (fd, NULL);
         }
     }
 
@@ -252,14 +253,14 @@ tr_torrentSetMetadataPiece (tr_torrent  * tor, int piece, const void  * data, in
               tr_variant newMetainfo;
               char * path = tr_strdup (tor->info.torrent);
 
-              if (!tr_variantFromFile (&newMetainfo, TR_VARIANT_FMT_BENC, path))
+              if (tr_variantFromFile (&newMetainfo, TR_VARIANT_FMT_BENC, path, NULL))
                 {
                   bool hasInfo;
                   tr_info info;
                   int infoDictLength;
 
                   /* remove any old .torrent and .resume files */
-                  tr_remove (path);
+                  tr_sys_path_remove (path, NULL);
                   tr_torrentRemoveResume (tor);
 
                   dbgmsg (tor, "Saving completed metadata to \"%s\"", path);

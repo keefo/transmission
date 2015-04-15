@@ -4,7 +4,7 @@
  * It may be used under the GNU GPL versions 2 or 3
  * or any future license endorsed by Mnemosyne LLC.
  *
- * $Id$
+ * $Id: util.h 14428 2015-01-02 11:15:31Z mikedld $
  */
 
 #ifndef GTR_UTIL_H
@@ -48,7 +48,7 @@ extern const char * speed_T_str;
                                                                          \
   return q;                                                             \
  }
-#endif 
+#endif
 
 
 /* macro to shut up "unused parameter" warnings */

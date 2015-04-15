@@ -4,19 +4,25 @@
  * It may be used under the GNU GPL versions 2 or 3
  * or any future license endorsed by Mnemosyne LLC.
  *
- * $Id$
+ * $Id: platform-quota.c 14480 2015-03-19 06:08:06Z mikedld $
  */
 
 #include <errno.h>
 #include <stdlib.h>
 #include <string.h>
-#include <unistd.h> /* getuid() */
+
 #include <event2/util.h> /* evutil_ascii_strcasecmp () */
 
-#ifndef WIN32
+#ifndef _WIN32
+ #include <unistd.h> /* getuid() */
  #include <sys/types.h> /* types needed by quota.h */
  #if defined(__FreeBSD__) || defined(__OpenBSD__)
   #include <ufs/ufs/quota.h> /* quotactl() */
+ #elif defined (__NetBSD__)
+  #include <sys/param.h>
+  #ifndef statfs
+   #define statfs statvfs
+  #endif
  #elif defined (__sun)
   #include <sys/fs/ufs_quota.h> /* quotactl */
  #else
@@ -24,8 +30,6 @@
  #endif
  #ifdef HAVE_GETMNTENT
   #ifdef __sun
-   #include <sys/types.h>
-   #include <sys/stat.h>
    #include <fcntl.h>
    #include <stdio.h>
    #include <sys/mntent.h>
@@ -42,9 +46,13 @@
  #endif
 #endif
 
-#ifdef SYS_DARWIN
- #define HAVE_SYS_STATVFS_H
- #define HAVE_STATVFS
+#ifdef __APPLE__
+ #ifndef HAVE_SYS_STATVFS_H
+  #define HAVE_SYS_STATVFS_H
+ #endif
+ #ifndef HAVE_STATVFS
+  #define HAVE_STATVFS
+ #endif
 #endif
 
 #ifdef HAVE_SYS_STATVFS_H
@@ -64,7 +72,7 @@
 ****
 ***/
 
-#ifndef WIN32
+#ifndef _WIN32
 static const char *
 getdev (const char * path)
 {
@@ -192,6 +200,47 @@ getblkdev (const char * path)
   return device;
 }
 
+#if defined(__NetBSD__) && (__NetBSD_Version__ >= 600000000)
+#include <quota.h>
+
+static int64_t
+getquota (const char * device)
+{
+  struct quotahandle *qh;
+  struct quotakey qk;
+  struct quotaval qv;
+  int64_t limit;
+  int64_t freespace;
+  int64_t spaceused;
+
+  qh = quota_open(device);
+  if (qh == NULL) {
+    return -1;
+  }
+  qk.qk_idtype = QUOTA_IDTYPE_USER;
+  qk.qk_id = getuid();
+  qk.qk_objtype = QUOTA_OBJTYPE_BLOCKS;
+  if (quota_get(qh, &qk, &qv) == -1) {
+    quota_close(qh);
+    return -1;
+  }
+  if (qv.qv_softlimit > 0) {
+    limit = qv.qv_softlimit;
+  }
+  else if (qv.qv_hardlimit > 0) {
+    limit = qv.qv_hardlimit;
+  }
+  else {
+    quota_close(qh);
+    return -1;
+  }
+  spaceused = qv.qv_usage;
+  quota_close(qh);
+
+  freespace = limit - spaceused;
+  return (freespace < 0) ? 0 : freespace;
+}
+#else
 static int64_t
 getquota (const char * device)
 {
@@ -200,17 +249,17 @@ getquota (const char * device)
   int64_t freespace;
   int64_t spaceused;
 
-#if defined(__FreeBSD__) || defined(__OpenBSD__) || defined(SYS_DARWIN)
+#if defined(__FreeBSD__) || defined(__OpenBSD__) || defined(__APPLE__)
   if (quotactl(device, QCMD(Q_GETQUOTA, USRQUOTA), getuid(), (caddr_t) &dq) == 0)
     {
 #elif defined(__sun)
-  struct quotctl  op; 
-  int fd = open(device, O_RDONLY); 
-  if (fd < 0) 
-    return -1; 
-  op.op = Q_GETQUOTA; 
-  op.uid = getuid(); 
-  op.addr = (caddr_t) &dq; 
+  struct quotctl  op;
+  int fd = open(device, O_RDONLY);
+  if (fd < 0)
+    return -1;
+  op.op = Q_GETQUOTA;
+  op.uid = getuid();
+  op.addr = (caddr_t) &dq;
   if (ioctl(fd, Q_QUOTACTL, &op) == 0)
     {
       close(fd);
@@ -234,17 +283,17 @@ getquota (const char * device)
         }
 #if defined(__FreeBSD__) || defined(__OpenBSD__)
       spaceused = (int64_t) dq.dqb_curblocks >> 1;
-#elif defined(SYS_DARWIN)
+#elif defined(__APPLE__)
       spaceused = (int64_t) dq.dqb_curbytes;
 #elif defined(__UCLIBC__)
       spaceused = (int64_t) btodb(dq.dqb_curblocks);
-#elif defined(__sun) || (_LINUX_QUOTA_VERSION < 2)
+#elif defined(__sun) || (defined(_LINUX_QUOTA_VERSION) && _LINUX_QUOTA_VERSION < 2)
       spaceused = (int64_t) dq.dqb_curblocks >> 1;
 #else
       spaceused = btodb(dq.dqb_curspace);
 #endif
       freespace = limit - spaceused;
-#ifdef SYS_DARWIN
+#ifdef __APPLE__
       return (freespace < 0) ? 0 : freespace;
 #else
       return (freespace < 0) ? 0 : freespace * 1024;
@@ -256,6 +305,7 @@ getquota (const char * device)
   /* something went wrong */
   return -1;
 }
+#endif
 
 #ifdef HAVE_XQM
 static int64_t
@@ -290,14 +340,14 @@ getxfsquota (char * device)
   return -1;
 }
 #endif /* HAVE_XQM */
-#endif /* WIN32 */
+#endif /* _WIN32 */
 
 static int64_t
 tr_getQuotaFreeSpace (const struct tr_device_info * info)
 {
   int64_t ret = -1;
 
-#ifndef WIN32
+#ifndef _WIN32
 
   if (info->fstype && !evutil_ascii_strcasecmp(info->fstype, "xfs"))
     {
@@ -309,7 +359,12 @@ tr_getQuotaFreeSpace (const struct tr_device_info * info)
     {
       ret = getquota (info->device);
     }
-#endif /* WIN32 */
+
+#else /* _WIN32 */
+
+  (void) info;
+
+#endif /* _WIN32 */
 
   return ret;
 }
@@ -317,12 +372,23 @@ tr_getQuotaFreeSpace (const struct tr_device_info * info)
 static int64_t
 tr_getDiskFreeSpace (const char * path)
 {
-#ifdef WIN32
+#ifdef _WIN32
 
-  uint64_t freeBytesAvailable = 0;
-  return GetDiskFreeSpaceEx (path, &freeBytesAvailable, NULL, NULL)
-    ? (int64_t)freeBytesAvailable
-    : -1;
+  int64_t ret = -1;
+  wchar_t * wide_path;
+
+  wide_path = tr_win32_utf8_to_native (path, -1);
+
+  if (wide_path != NULL)
+    {
+      ULARGE_INTEGER freeBytesAvailable;
+      if (GetDiskFreeSpaceExW (wide_path, &freeBytesAvailable, NULL, NULL))
+        ret = freeBytesAvailable.QuadPart;
+
+      tr_free (wide_path);
+    }
+
+  return ret;
 
 #elif defined(HAVE_STATVFS)
 
@@ -344,7 +410,7 @@ tr_device_info_create (const char * path)
 
   info = tr_new0 (struct tr_device_info, 1);
   info->path = tr_strdup (path);
-#ifndef WIN32
+#ifndef _WIN32
   info->device = tr_strdup (getblkdev (path));
   info->fstype = tr_strdup (getfstype (path));
 #endif

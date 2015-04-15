@@ -4,22 +4,15 @@
  * It may be used under the GNU GPL versions 2 or 3
  * or any future license endorsed by Mnemosyne LLC.
  *
- * $Id$
+ * $Id: remote.c 14491 2015-04-11 10:51:59Z mikedld $
  */
 
 #include <assert.h>
 #include <ctype.h> /* isspace */
-#include <errno.h>
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h> /* strcmp */
-
-#ifdef WIN32
- #include <direct.h> /* getcwd */
-#else
- #include <unistd.h> /* getcwd */
-#endif
 
 #include <event2/buffer.h>
 
@@ -27,6 +20,9 @@
 #include <curl/curl.h>
 
 #include <libtransmission/transmission.h>
+#include <libtransmission/crypto-utils.h>
+#include <libtransmission/error.h>
+#include <libtransmission/file.h>
 #include <libtransmission/log.h>
 #include <libtransmission/rpcimpl.h>
 #include <libtransmission/tr-getopt.h>
@@ -268,7 +264,7 @@ static tr_option opts[] =
     { 'O', "no-dht",                 "Disable distributed hash tables (DHT)", "O", 0, NULL },
     { 'p', "port",                   "Port for incoming peers (Default: " TR_DEFAULT_PEER_PORT_STR ")", "p", 1, "<port>" },
     { 962, "port-test",              "Port testing", "pt", 0, NULL },
-    { 'P', "random-port",            "Random port for incomping peers", "P", 0, NULL },
+    { 'P', "random-port",            "Random port for incoming peers", "P", 0, NULL },
     { 900, "priority-high",          "Try to download these file(s) first", "ph", 1, "<files>" },
     { 901, "priority-normal",        "Try to download these file(s) normally", "pn", 1, "<files>" },
     { 902, "priority-low",           "Try to download these file(s) last", "pl", 1, "<files>" },
@@ -498,21 +494,18 @@ static char*
 tr_getcwd (void)
 {
   char * result;
-  char buf[2048];
+  tr_error * error = NULL;
 
-#ifdef WIN32
-  result = _getcwd (buf, sizeof (buf));
-#else
-  result = getcwd (buf, sizeof (buf));
-#endif
+  result = tr_sys_dir_get_current (&error);
 
   if (result == NULL)
     {
-      fprintf (stderr, "getcwd error: \"%s\"", tr_strerror (errno));
-      *buf = '\0';
+      fprintf (stderr, "getcwd error: \"%s\"", error->message);
+      tr_error_free (error);
+      result = tr_strdup ("");
     }
 
-  return tr_strdup (buf);
+  return result;
 }
 
 static char*
@@ -539,7 +532,7 @@ getEncodedMetainfo (const char * filename)
 {
     size_t    len = 0;
     char *    b64 = NULL;
-    uint8_t * buf = tr_loadFile (filename, &len);
+    uint8_t * buf = tr_loadFile (filename, &len, NULL);
 
     if (buf)
     {
@@ -1057,7 +1050,7 @@ printDetails (tr_variant * top)
                         break;
                     case TR_RATIOLIMIT_SINGLE:
                         if (tr_variantDictFindReal (t, TR_KEY_seedRatioLimit, &d))
-                            printf ("  Ratio Limit: %.2f\n", d);
+                            printf ("  Ratio Limit: %s\n", strlratio2 (buf, d, sizeof(buf)));
                         break;
                     case TR_RATIOLIMIT_UNLIMITED:
                         printf ("  Ratio Limit: Unlimited\n");
@@ -1199,9 +1192,9 @@ printPeers (tr_variant * top)
 }
 
 static void
-printPiecesImpl (const uint8_t * raw, size_t rawlen, int64_t j)
+printPiecesImpl (const uint8_t * raw, size_t rawlen, size_t j)
 {
-    int i, k, len;
+    size_t i, k, len;
     char * str = tr_base64_decode (raw, rawlen, &len);
     printf ("  ");
     for (i=k=0; k<len; ++k) {
@@ -1233,7 +1226,8 @@ printPieces (tr_variant * top)
             tr_variant * torrent = tr_variantListChild (torrents, i);
             if (tr_variantDictFindRaw (torrent, TR_KEY_pieces, &raw, &rawlen) &&
                 tr_variantDictFindInt (torrent, TR_KEY_pieceCount, &j)) {
-                printPiecesImpl (raw, rawlen, j);
+                assert (j >= 0);
+                printPiecesImpl (raw, rawlen, (size_t) j);
                 if (i+1<n)
                     printf ("\n");
             }
@@ -1566,7 +1560,7 @@ printSession (tr_variant * top)
                 printf ("  Peer limit: %" PRId64 "\n", peerLimit);
 
                 if (seedRatioLimited)
-                    tr_snprintf (buf, sizeof (buf), "%.2f", seedRatioLimit);
+                    strlratio2 (buf, seedRatioLimit, sizeof(buf));
                 else
                     tr_strlcpy (buf, "Unlimited", sizeof (buf));
                 printf ("  Default seed ratio limit: %s\n", buf);
@@ -1771,7 +1765,7 @@ tr_curl_easy_init (struct evbuffer * writebuf)
     if (UseSSL)
     {
         curl_easy_setopt (curl, CURLOPT_SSL_VERIFYHOST, 0); /* do not verify subject/hostname */
-        curl_easy_setopt (curl, CURLOPT_SSL_VERIFYPEER, 0); /* since most certs will be self-signed, do not verify against CA */		
+        curl_easy_setopt (curl, CURLOPT_SSL_VERIFYPEER, 0); /* since most certs will be self-signed, do not verify against CA */
     }
     if (sessionId) {
         char * h = tr_strdup_printf ("%s: %s", TR_RPC_SESSION_ID_HEADER, sessionId);
@@ -1916,13 +1910,11 @@ processArgs (const char * rpcurl, int argc, const char ** argv)
                     break;
 
                 case 810: /* authenv */
+                    auth = tr_env_get_string ("TR_AUTH", NULL);
+                    if (auth == NULL)
                     {
-                        char *authenv = getenv ("TR_AUTH");
-                        if (!authenv) {
-                            fprintf (stderr, "The TR_AUTH environment variable is not set\n");
-                            exit (0);
-                        }
-                        auth = tr_strdup (authenv);
+                        fprintf (stderr, "The TR_AUTH environment variable is not set\n");
+                        exit (0);
                     }
                     break;
 
@@ -2415,6 +2407,10 @@ main (int argc, char ** argv)
     char * host = NULL;
     char * rpcurl = NULL;
     int exit_status = EXIT_SUCCESS;
+
+#ifdef _WIN32
+    tr_win32_make_args_utf8 (&argc, &argv);
+#endif
 
     if (argc < 2) {
         showUsage ();

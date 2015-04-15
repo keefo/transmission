@@ -3,8 +3,8 @@ dnl STATUS: "X" for prerelease beta builds,
 dnl         "Z" for unsupported trunk builds,
 dnl         "0" for stable, supported releases
 dnl these should be the only two lines you need to change
-m4_define([user_agent_prefix],[2.82+])
-m4_define([peer_id_prefix],[-WH282Z-])
+m4_define([user_agent_prefix],[2.84+])
+m4_define([peer_id_prefix],[-TR284Z-])
 
 AC_INIT([transmission],[user_agent_prefix],[http://trac.transmissionbt.com/newticket])
 AC_SUBST(USERAGENT_PREFIX,[user_agent_prefix])
@@ -18,6 +18,7 @@ dnl AM_CONFIG_HEADER(config.h)
 AC_CONFIG_SRCDIR(libtransmission/transmission.h)
 AM_INIT_AUTOMAKE([1.9 tar-pax no-dist-gzip dist-xz])
 LT_INIT
+LT_LIB_M
 
 if test m4_substr(peer_id_prefix,6,1) = "0"; then
   supported_build=yes
@@ -36,12 +37,21 @@ AM_CONDITIONAL(TR_UNSTABLE, test "x$supported_build" = "xno")
 ##   MANDATORY for everything
 ##
 ##
+
 CURL_MINIMUM=7.15.4
 AC_SUBST(CURL_MINIMUM)
 LIBEVENT_MINIMUM=2.0.10
 AC_SUBST(LIBEVENT_MINIMUM)
+ZLIB_MINIMUM=1.2.3
+AC_SUBST(ZLIB_MINIMUM)
+
+# crypto backends
 OPENSSL_MINIMUM=0.9.4
 AC_SUBST(OPENSSL_MINIMUM)
+CYASSL_MINIMUM=3.0
+AC_SUBST(CYASSL_MINIMUM)
+POLARSSL_MINIMUM=0x01020000 # 1.2
+AC_SUBST(POLARSSL_MINIMUM)
 
 ##
 ##
@@ -69,19 +79,10 @@ AC_SUBST(LIBAPPINDICATOR_MINIMUM)
 
 AC_PROG_CC
 AC_PROG_CXX
-if test "x$CXX" != "x"; then # CXX is set...
-  if test -f "$CXX"; then # maybe it's an absolute path passed in env variables...
-    AC_MSG_CHECKING([for $CXX])
-    HAVE_CXX="yes"
-    AC_MSG_RESULT([$HAVE_CXX])
-  else
-    AC_CHECK_PROG([HAVE_CXX],[$CXX],[yes],[no])
-  fi
-fi
 AC_C_INLINE
 if test "x$GCC" = "xyes" ; then
 
-    CFLAGS="$CFLAGS -std=gnu99 -ggdb3 -Wall -W -Wpointer-arith -Wformat-security -Wcast-align -Wundef -Wcast-align -Wstrict-prototypes -Wmissing-declarations -Wmissing-format-attribute -Wredundant-decls -Wnested-externs -Wunused-parameter -Wwrite-strings -Winline -Wfloat-equal"
+    CFLAGS="$CFLAGS -std=gnu99 -ggdb3 -Wall -W -Wpointer-arith -Wformat-security -Wundef -Wcast-align -Wstrict-prototypes -Wmissing-declarations -Wmissing-format-attribute -Wredundant-decls -Wnested-externs -Wunused-parameter -Wwrite-strings -Winline -Wfloat-equal"
 
     dnl figure out gcc version
     AC_MSG_CHECKING([gcc version])
@@ -105,7 +106,7 @@ AC_HEADER_STDC
 AC_HEADER_TIME
 
 AC_CHECK_HEADERS([stdbool.h])
-AC_CHECK_FUNCS([iconv_open pread pwrite lrintf strlcpy daemon dirname basename strcasecmp localtime_r fallocate64 posix_fallocate memmem strsep strtold syslog valloc getpagesize posix_memalign statvfs htonll ntohll mkdtemp])
+AC_CHECK_FUNCS([iconv_open pread pwrite lrintf strlcpy daemon dirname basename canonicalize_file_name strcasecmp localtime_r fallocate64 posix_fallocate memmem strsep strtold syslog valloc getpagesize posix_memalign statvfs htonll ntohll mkdtemp])
 AC_PROG_INSTALL
 AC_PROG_MAKE_SET
 ACX_PTHREAD
@@ -117,13 +118,73 @@ fi
 AC_SEARCH_LIBS(cos, [m])
 AC_SEARCH_LIBS([socket], [socket net])
 AC_SEARCH_LIBS([gethostbyname], [nsl bind])
-PKG_CHECK_MODULES(OPENSSL, [openssl >= $OPENSSL_MINIMUM], , [CHECK_SSL()])
+AC_SEARCH_LIBS([quotacursor_skipidtype], [quota])
 PKG_CHECK_MODULES(LIBCURL, [libcurl >= $CURL_MINIMUM])
 PKG_CHECK_MODULES(LIBEVENT, [libevent >= $LIBEVENT_MINIMUM])
-AC_PATH_ZLIB
+PKG_CHECK_MODULES(ZLIB, [zlib >= $ZLIB_MINIMUM])
+
+
+AC_ARG_WITH([crypto], AS_HELP_STRING([--with-crypto=PKG],
+            [Use specified crypto library: auto (default), openssl, cyassl, polarssl]),
+            [want_crypto=$withval], [want_crypto=auto])
+
+AS_IF([test "x$want_crypto" = "xauto" -o "x$want_crypto" = "xopenssl"], [
+    PKG_CHECK_MODULES(OPENSSL, [openssl >= $OPENSSL_MINIMUM],
+        [want_crypto="openssl"; CRYPTO_PKG="openssl"; CRYPTO_CFLAGS="$OPENSSL_CFLAGS"; CRYPTO_LIBS="$OPENSSL_LIBS"],
+        [AS_IF([test "x$want_crypto" = "xopenssl"],
+            [AC_MSG_ERROR([OpenSSL support requested, but library not found.])]
+        )]
+    )
+])
+AS_IF([test "x$want_crypto" = "xauto" -o "x$want_crypto" = "xcyassl"], [
+    PKG_CHECK_MODULES(WOLFSSL, [wolfssl >= $CYASSL_MINIMUM],
+        [want_crypto="cyassl"; CRYPTO_PKG="cyassl"; CRYPTO_CFLAGS="$WOLFSSL_CFLAGS"; CRYPTO_LIBS="$WOLFSSL_LIBS"],
+        [PKG_CHECK_MODULES(CYASSL, [cyassl >= $CYASSL_MINIMUM],
+            [want_crypto="cyassl"; CRYPTO_PKG="cyassl"; CRYPTO_CFLAGS="$CYASSL_CFLAGS"; CRYPTO_LIBS="$CYASSL_LIBS"],
+            [AS_IF([test "x$want_crypto" = "xcyassl"],
+                [AC_MSG_ERROR([CyaSSL support requested, but library not found.])]
+            )]
+        )]
+    )
+])
+AS_IF([test "x$want_crypto" = "xauto" -o "x$want_crypto" = "xpolarssl"], [
+    AC_CHECK_HEADER([polarssl/version.h],
+        [AC_EGREP_CPP([version_ok], [#include <polarssl/version.h>
+                                     #if defined (POLARSSL_VERSION_NUMBER) && POLARSSL_VERSION_NUMBER >= $POLARSSL_MINIMUM
+                                     version_ok
+                                     #endif],
+            [AC_CHECK_LIB([polarssl], [dhm_calc_secret],
+                [want_crypto="polarssl"; CRYPTO_PKG="polarssl"; CRYPTO_CFLAGS=""; CRYPTO_LIBS="-lpolarssl"],
+                [AS_IF([test "x$want_crypto" = "xpolarssl"],
+                    [AC_MSG_ERROR([PolarSSL support requested, but library not found.])]
+                )]
+            )],
+            [AS_IF([test "x$want_crypto" = "xpolarssl"],
+                [AC_MSG_ERROR([PolarSSL support requested, but version not suitable.])]
+            )]
+        )],
+        [AS_IF([test "x$want_crypto" = "xpolarssl"],
+            [AC_MSG_ERROR([PolarSSL support requested, but headers not found.])]
+        )]
+    )
+])
+# we should have found the library by now
+AS_IF([test "x$CRYPTO_PKG" = "x"], [
+    AS_IF([test "x$want_crypto" = "xauto"],
+        [AC_MSG_ERROR([Unable to find any supported crypto library.])],
+        [AC_MSG_ERROR([Requested crypto library "$want_crypto" is not supported.])],
+    )
+])
+
+AM_CONDITIONAL([CRYPTO_USE_OPENSSL],[test "x$CRYPTO_PKG" = "xopenssl"])
+AM_CONDITIONAL([CRYPTO_USE_CYASSL],[test "x$CRYPTO_PKG" = "xcyassl"])
+AM_CONDITIONAL([CRYPTO_USE_POLARSSL],[test "x$CRYPTO_PKG" = "xpolarssl"])
+AC_SUBST(CRYPTO_PKG)
+AC_SUBST(CRYPTO_CFLAGS)
+AC_SUBST(CRYPTO_LIBS)
+
 
 AC_SYS_LARGEFILE
-AC_CHECK_FUNCS([lseek64])
 
 AC_FUNC_GETMNTENT
 
@@ -201,8 +262,49 @@ dnl  dht
 
 DHT_CFLAGS="-I\$(top_srcdir)/third-party/dht"
 DHT_LIBS="\$(top_builddir)/third-party/dht/libdht.a"
+DHT_LIBS_QT="\$\${TRANSMISSION_TOP}/third-party/dht/libdht.a"
+build_bundled_dht="yes"
+AC_ARG_ENABLE([external-dht],
+              AS_HELP_STRING([--enable-external-dht],[Use system external-dht]),
+              [want_external_dht=${enableval}],
+              [want_external_dht=no])
+if test "x$want_external_dht" != "xno" ; then
+       dnl Would be lovely if it had pkgconfig
+       DHT_CFLAGS=""
+       DHT_LIBS="-ldht"
+       DHT_LIBS_QT="-ldht"
+       build_bundled_dht="no"
+fi
+
+AM_CONDITIONAL([BUILD_DHT],[test "x$build_bundled_dht" = "xyes"])
 AC_SUBST(DHT_CFLAGS)
 AC_SUBST(DHT_LIBS)
+AC_SUBST(DHT_LIBS_QT)
+
+
+dnl ----------------------------------------------------------------------------
+dnl
+dnl  libb64
+
+LIBB64_CFLAGS="-I\$(top_srcdir)/third-party/libb64"
+LIBB64_LIBS="\$(top_builddir)/third-party/libb64/libb64.a"
+LIBB64_LIBS_QT="\$\${TRANSMISSION_TOP}/third-party/libb64/libb64.a"
+build_bundled_b64="yes"
+AC_ARG_ENABLE([external-b64],
+              AS_HELP_STRING([--enable-external-b64],[Use system libb64]),
+              [want_external_b64=${enableval}],
+              [want_external_b64=no])
+if test "x$want_external_b64" != "xno" ; then
+    LIBB64_CFLAGS="-DUSE_SYSTEM_B64"
+    LIBB64_LIBS="-lb64"
+    LIBB64_LIBS_QT="-lb64"
+    build_bundled_b64="no"
+fi
+
+AM_CONDITIONAL([BUILD_B64],[test "x$build_bundled_b64" = "xyes"])
+AC_SUBST(LIBB64_CFLAGS)
+AC_SUBST(LIBB64_LIBS)
+AC_SUBST(LIBB64_LIBS_QT)
 
 
 dnl ----------------------------------------------------------------------------
@@ -216,17 +318,36 @@ AC_CHECK_LIB([rt],
 
 AC_MSG_CHECKING([µTP])
 build_utp="no"
-if test "x$HAVE_CXX" = "xyes" ; then
-    have_utp="yes"
+
+ac_save_LIBS="$LIBS"
+LIBS="-lutp"
+AC_LINK_IFELSE(
+  [AC_LANG_PROGRAM([#include <libutp/utp.h>],
+                   [struct UTPFunctionTable func;])],
+  [have_utp="yes"],
+  [have_utp="no"]
+)
+LIBS="$ac_save_LIBS"
+
+if test "x$have_utp" = "xyes" -o "x$CXX" != "x"; then
+    want_utp_default="yes"
 else
-    have_utp="no"
+    want_utp_default="no"
 fi
+
 AC_ARG_ENABLE([utp],
               AS_HELP_STRING([--enable-utp],[build µTP support]),
               [want_utp=${enableval}],
-              [want_utp=${have_utp}])
-if test "x$want_utp" = "xyes" ; then
+              [want_utp=${want_utp_default}])
+if test "x$want_utp" = "xyes"; then
     if test "x$have_utp" = "xyes"; then
+        dnl Would be lovely if it had pkgconfig
+        LIBUTP_CFLAGS=""
+        LIBUTP_LIBS="-lutp $libutp_extra_libs"
+        LIBUTP_LIBS_QT="-lutp $libutp_extra_libs"
+        AC_DEFINE([WITH_UTP],[1])
+        build_utp="system"
+    elif test "x$CXX" != "x"; then
         LIBUTP_CFLAGS="-I\$(top_srcdir)/third-party/"
         LIBUTP_LIBS="\$(top_builddir)/third-party/libutp/libutp.a"
         LIBUTP_LIBS_QT="\$\${TRANSMISSION_TOP}/third-party/libutp/libutp.a"
@@ -251,52 +372,82 @@ dnl
 dnl  look for preinstalled miniupnpc...
 dnl
 
-AC_MSG_CHECKING([supported miniupnp library])
-upnp_version="none"
 ac_save_LIBS="$LIBS"
 LIBS="-lminiupnpc"
-# See if the OS has its miniupnp 1.5 installed
-AC_LINK_IFELSE([AC_LANG_PROGRAM([[
-    #include <stdlib.h>
-    #include <miniupnpc/miniupnpc.h>
-    #include <miniupnpc/upnpcommands.h>
-]], [[
-    struct UPNPDev * devlist;
-    struct UPNPUrls    urls;
-    struct IGDdatas    data;
-    char lanaddr[16];
-    char portStr[8];
-    char intPort[8];
-    char intClient[16];
-    upnpDiscover( 2000, NULL, NULL, 0 );
-    UPNP_GetValidIGD( devlist, &urls, &data, lanaddr, sizeof( lanaddr ) );
-    UPNP_GetSpecificPortMappingEntry( urls.controlURL, data.first.servicetype,
-                        portStr, "TCP", intClient, intPort );
-]])],[
-AC_DEFINE(HAVE_MINIUPNP_15, 1, [Define to 1 if you have miniupnpc version 1.5])
-upnp_version="1.5"],[])
+AC_MSG_CHECKING([system miniupnpc library])
 
-# See if the OS has its miniupnp 1.6 installed
-AC_LINK_IFELSE([AC_LANG_PROGRAM([[
+dnl See if ANY version of miniupnpc is installed
+AC_LINK_IFELSE(
+  [AC_LANG_PROGRAM([#include <miniupnpc/miniupnpc.h>],
+                   [struct UPNPDev dev;])],
+  [upnp_version="unknown"],
+  [upnp_version="none"]
+)
+
+dnl Let's hope it's 1.7 or higher, since it provides
+dnl MINIUPNPC_API_VERSION and we won't have to figure
+dnl it out on our own
+if test "x$upnp_version" = "xunknown" ; then
+  AC_RUN_IFELSE(
+    [AC_LANG_PROGRAM(
+      [#include <stdlib.h>
+       #include <miniupnpc/miniupnpc.h>],
+      [#ifdef MINIUPNPC_API_VERSION
+       return EXIT_SUCCESS;
+       #else
+       return EXIT_FAILURE;
+       #endif]
+    )],
+    [upnp_version=">= 1.7"]
+  )
+fi
+
+dnl Or maybe it's miniupnp 1.6
+if test "x$upnp_version" = "xunknown" ; then
+  AC_LINK_IFELSE([AC_LANG_PROGRAM([[
     #include <stdlib.h>
     #include <errno.h>
     #include <miniupnpc/miniupnpc.h>
     #include <miniupnpc/upnpcommands.h>
-]], [[
+  ]], [[
     struct UPNPDev * devlist;
-    struct UPNPUrls    urls;
-    struct IGDdatas    data;
+    struct UPNPUrls urls;
+    struct IGDdatas data;
     char lanaddr[16];
     char portStr[8];
     char intPort[8];
     char intClient[16];
     upnpDiscover( 2000, NULL, NULL, 0, 0, &errno );
-    UPNP_GetValidIGD( devlist, &urls, &data, lanaddr, sizeof( lanaddr ) );
+    UPNP_GetValidIGD( devlist, &urls, &data, lanaddr, sizeof( lanaddr ) ); 
     UPNP_GetSpecificPortMappingEntry( urls.controlURL, data.first.servicetype,
                         portStr, "TCP", intClient, intPort, NULL, NULL, NULL );
-]])],[
-AC_DEFINE(HAVE_MINIUPNP_16, 1, [Define to 1 if you have miniupnpc version 1.6])
-upnp_version="1.6"],[])
+  ]])],[
+  AC_DEFINE(MINIUPNPC_API_VERSION, 8, [miniupnpc 1.6 has API version 8])
+  upnp_version="1.6"])
+fi
+
+dnl Or maybe it's miniupnp 1.5
+if test "x$upnp_version" = "xunknown" ; then
+  AC_LINK_IFELSE([AC_LANG_PROGRAM([[
+    #include <stdlib.h>
+    #include <miniupnpc/miniupnpc.h>
+    #include <miniupnpc/upnpcommands.h>
+  ]], [[
+    struct UPNPDev * devlist;
+    struct UPNPUrls urls;
+    struct IGDdatas data;
+    char lanaddr[16];
+    char portStr[8];
+    char intPort[8];
+    char intClient[16];
+    upnpDiscover( 2000, NULL, NULL, 0 );
+    UPNP_GetValidIGD( devlist, &urls, &data, lanaddr, sizeof( lanaddr ) ); 
+    UPNP_GetSpecificPortMappingEntry( urls.controlURL, data.first.servicetype,
+                        portStr, "TCP", intClient, intPort );
+  ]])],[
+  AC_DEFINE(MINIUPNPC_API_VERSION, 5, [miniupnpc 1.5 has API version 5])
+  upnp_version="1.5"])
+fi
 
 # ... and the results of our tests
 LIBS="$ac_save_LIBS"
@@ -306,11 +457,9 @@ if test "x$upnp_version" = "xnone" ; then
     LIBUPNP_CFLAGS="-I\$(top_srcdir)/third-party/"
     LIBUPNP_LIBS="\$(top_builddir)/third-party/miniupnp/libminiupnp.a"
     LIBUPNP_LIBS_QT="\$\${TRANSMISSION_TOP}/third-party/miniupnp/libminiupnp.a"
-    dnl because this is the version that we bundle...
-    AC_DEFINE(HAVE_MINIUPNP_16, 1, [Define to 1 if you have miniupnpc version 1.6])
 else
     AC_DEFINE([SYSTEM_MINIUPNP])
-    LIBUPNP_CFLAGS=""
+    LIBUPNP_CFLAGS="" 
     LIBUPNP_LIBS="-lminiupnpc"
     LIBUPNP_LIBS_QT="-lminiupnpc"
 fi
@@ -319,31 +468,31 @@ AC_SUBST(LIBUPNP_LIBS)
 AC_SUBST(LIBUPNP_LIBS_QT)
 
 
-
+ 
 
 dnl ----------------------------------------------------------------------------
 dnl
-dnl  Allow usage of system natpmp library
+dnl  Allow usage of system natpmp library 
 
-LIBNATPMP_CFLAGS="-I\$(top_srcdir)/third-party/libnatpmp/"
-LIBNATPMP_LIBS="\$(top_builddir)/third-party/libnatpmp/libnatpmp.a"
-LIBNATPMP_LIBS_QT="\$\${TRANSMISSION_TOP}/third-party/libnatpmp/libnatpmp.a"
-build_bundled_natpmp="yes"
-AC_ARG_ENABLE([external-natpmp],
-              AS_HELP_STRING([--enable-external-natpmp],[Use system external-natpmp]),
-              [want_external_natpmp=${enableval}],
-              [want_external_natpmp=no])
-if test "x$want_external_natpmp" != "xno" ; then
-	dnl Would be lovely if it had pkgconfig
-	LIBNATPMP_CFLAGS=""
-	LIBNATPMP_LIBS="-lnatpmp"
-	LIBNATPMP_LIBS_QT="-lnatpmp"
-	build_bundled_natpmp="no"
-fi
-AM_CONDITIONAL([BUILD_NATPMP],[test "x$build_bundled_natpmp" = "xyes"])
-AC_SUBST(LIBNATPMP_CFLAGS)
-AC_SUBST(LIBNATPMP_LIBS)
-AC_SUBST(LIBNATPMP_LIBS_QT)
+LIBNATPMP_CFLAGS="-I\$(top_srcdir)/third-party/libnatpmp/" 
+LIBNATPMP_LIBS="\$(top_builddir)/third-party/libnatpmp/libnatpmp.a" 
+LIBNATPMP_LIBS_QT="\$\${TRANSMISSION_TOP}/third-party/libnatpmp/libnatpmp.a" 
+build_bundled_natpmp="yes" 
+AC_ARG_ENABLE([external-natpmp], 
+              AS_HELP_STRING([--enable-external-natpmp],[Use system external-natpmp]), 
+              [want_external_natpmp=${enableval}], 
+              [want_external_natpmp=no]) 
+if test "x$want_external_natpmp" != "xno" ; then 
+	dnl Would be lovely if it had pkgconfig 
+	LIBNATPMP_CFLAGS=""  
+	LIBNATPMP_LIBS="-lnatpmp" 
+	LIBNATPMP_LIBS_QT="-lnatpmp" 
+	build_bundled_natpmp="no" 
+fi 
+AM_CONDITIONAL([BUILD_NATPMP],[test "x$build_bundled_natpmp" = "xyes"]) 
+AC_SUBST(LIBNATPMP_CFLAGS) 
+AC_SUBST(LIBNATPMP_LIBS) 
+AC_SUBST(LIBNATPMP_LIBS_QT) 
 
 
 dnl ----------------------------------------------------------------------------
@@ -428,7 +577,8 @@ case $host_os in
    *mingw32*)
      have_msw="yes"
      CXXFLAGS="$CXXFLAGS -mms-bitfields -mwin32 -mwindows"
-     CPPFLAGS="$CPPFLAGS -DWIN32 -D_WIN32 -DWIN32_LEAN_AND_MEAN"
+     CPPFLAGS="$CPPFLAGS -DWINVER=0x0600 -D_WIN32_WINNT=0x0600 -DWIN32_LEAN_AND_MEAN"
+     # CPPFLAGS="$CPPFLAGS -D__USE_MINGW_ANSI_STDIO=1 -D__STDC_FORMAT_MACROS=1"
      LIBS="$LIBS -liphlpapi -lshell32 -lws2_32"
      transmissionlocaledir="locale"
      if test -z "$host_alias"; then
@@ -441,7 +591,6 @@ case $host_os in
 
   *darwin*)
     have_darwin="yes"
-    CFLAGS="-DMACOSX $CFLAGS"
     ;;
 
 esac
@@ -489,13 +638,6 @@ EOF
       exit 1
     fi
 fi
-if test "x$have_darwin" = "xyes"; then
-    AC_DEFINE([HAVE_DARWIN], 1)
-    AC_DEFINE([SYS_DARWIN], 1)
-fi
-if test "x$have_msw" = "xyes"; then
-    AC_DEFINE([HAVE_MSW], 1)
-fi
 AM_CONDITIONAL(WIN32, test "x$have_msw" = "xyes")
 
 dnl ----------------------------------------------------------------------------
@@ -511,6 +653,7 @@ AC_CONFIG_FILES([Makefile
                  utils/Makefile
                  third-party/Makefile
                  third-party/dht/Makefile
+                 third-party/libb64/Makefile
                  third-party/libutp/Makefile
                  third-party/libnatpmp/Makefile
                  third-party/miniupnp/Makefile
@@ -542,6 +685,7 @@ Configuration:
    Build libtransmission:                             yes
       * optimized for low-resource systems:           ${enable_lightweight}
       * µTP enabled:                                  ${build_utp}
+      * crypto library:                               ${CRYPTO_PKG}
 
    Build Command-Line client:                         ${build_cli}
 

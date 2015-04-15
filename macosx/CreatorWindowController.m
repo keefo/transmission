@@ -1,5 +1,5 @@
 /******************************************************************************
- * $Id$
+ * $Id: CreatorWindowController.m 14290 2014-06-08 22:16:01Z jordan $
  *
  * Copyright (c) 2007-2012 Transmission authors and contributors
  *
@@ -150,7 +150,7 @@
     [fNameField setStringValue: name];
     [fNameField setToolTip: [fPath path]];
     
-    const BOOL multifile = !fInfo->isSingleFile;
+    const BOOL multifile = fInfo->isFolder;
     
     NSImage * icon = [[NSWorkspace sharedWorkspace] iconForFileType: multifile
                         ? NSFileTypeForHFSTypeCode(kGenericFolderIcon) : [fPath pathExtension]];

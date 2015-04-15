@@ -1,10 +1,10 @@
 /*
  * This file Copyright (C) 2013-2014 Mnemosyne LLC
  *
- * It may be used under the GNU Public License v2 or v3 licenses,
+ * It may be used under the GNU GPL versions 2 or 3
  * or any future license endorsed by Mnemosyne LLC.
  *
- * $Id$
+ * $Id: freespace-label.cc 14466 2015-01-29 21:53:05Z mikedld $
  */
 
 #include <libtransmission/transmission.h>
@@ -19,28 +19,37 @@ namespace
   static const int INTERVAL_MSEC = 15000;
 }
 
-FreespaceLabel :: FreespaceLabel (Session        & session,
-                                  const QString  & path,
-                                  QWidget        * parent):
+FreespaceLabel::FreespaceLabel (QWidget * parent):
   QLabel (parent),
-  mySession (session),
+  mySession (nullptr),
   myTag (-1),
   myTimer (this)
 {
-  myTimer.setSingleShot (false);
+  myTimer.setSingleShot (true);
   myTimer.setInterval (INTERVAL_MSEC);
-  myTimer.start ();
 
-  connect (&myTimer, SIGNAL(timeout()), this, SLOT(onTimer()));
-
-  connect (&mySession, SIGNAL(executed(int64_t, const QString&, struct tr_variant*)),
-           this,       SLOT(onSessionExecuted(int64_t, const QString&, struct tr_variant*)));
-
-  setPath (path);
+  connect (&myTimer, SIGNAL (timeout ()), this, SLOT (onTimer ()));
 }
 
 void
-FreespaceLabel :: setPath (const QString& path)
+FreespaceLabel::setSession (Session& session)
+{
+  if (mySession == &session)
+    return;
+
+  if (mySession != nullptr)
+    disconnect (mySession, nullptr, this, nullptr);
+
+  mySession = &session;
+
+  connect (mySession, SIGNAL (executed (int64_t, QString, tr_variant *)),
+           this,      SLOT (onSessionExecuted (int64_t, QString, tr_variant *)));
+
+  onTimer ();
+}
+
+void
+FreespaceLabel::setPath (const QString& path)
 {
   if (myPath != path)
     {
@@ -51,24 +60,23 @@ FreespaceLabel :: setPath (const QString& path)
 }
 
 void
-FreespaceLabel :: onTimer ()
+FreespaceLabel::onTimer ()
 {
-  const int64_t tag = mySession.getUniqueTag ();
-  const QByteArray myPathUtf8 = myPath.toUtf8 ();
+  myTimer.stop ();
 
-  myTag = tag;
-  tr_variant top;
-  tr_variantInitDict (&top, 3);
-  tr_variantDictAddStr (&top, TR_KEY_method, "free-space");
-  tr_variantDictAddInt (&top, TR_KEY_tag, tag);
-  tr_variant * args = tr_variantDictAddDict (&top, TR_KEY_arguments, 1);
-  tr_variantDictAddStr (args, TR_KEY_path, myPathUtf8.constData());
-  mySession.exec (&top);
-  tr_variantFree (&top);
+  if (mySession == nullptr || myPath.isEmpty ())
+    return;
+
+  tr_variant args;
+  tr_variantInitDict (&args, 1);
+  tr_variantDictAddStr (&args, TR_KEY_path, myPath.toUtf8 ().constData());
+
+  myTag = mySession->getUniqueTag ();
+  mySession->exec ("free-space", &args, myTag);
 }
 
 void
-FreespaceLabel :: onSessionExecuted (int64_t tag, const QString& result, struct tr_variant * arguments)
+FreespaceLabel::onSessionExecuted (int64_t tag, const QString& result, tr_variant * arguments)
 {
   Q_UNUSED (result);
 
@@ -83,7 +91,7 @@ FreespaceLabel :: onSessionExecuted (int64_t tag, const QString& result, struct 
   if (bytes >= 0)
     setText (tr("%1 free").arg(Formatter::sizeToString (bytes)));
   else
-    setText ("");
+    setText (QString ());
 
   // update the tooltip
   size_t len = 0;
@@ -91,4 +99,6 @@ FreespaceLabel :: onSessionExecuted (int64_t tag, const QString& result, struct 
   tr_variantDictFindStr (arguments, TR_KEY_path, &path, &len);
   str = QString::fromUtf8 (path, len);
   setToolTip (str);
+
+  myTimer.start ();
 }

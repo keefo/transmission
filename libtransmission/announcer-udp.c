@@ -4,7 +4,7 @@
  * It may be used under the GNU GPL versions 2 or 3
  * or any future license endorsed by Mnemosyne LLC.
  *
- * $Id$
+ * $Id: announcer-udp.c 14479 2015-03-18 07:34:26Z mikedld $
  */
 
 #define __LIBTRANSMISSION_ANNOUNCER_MODULE___
@@ -19,7 +19,7 @@
 #include "transmission.h"
 #include "announcer.h"
 #include "announcer-common.h"
-#include "crypto.h" /* tr_cryptoRandBuf () */
+#include "crypto-utils.h" /* tr_rand_buffer () */
 #include "log.h"
 #include "peer-io.h"
 #include "peer-mgr.h" /* tr_peerMgrCompactToPex () */
@@ -53,16 +53,16 @@ tau_sendto (tr_session * session,
             struct evutil_addrinfo * ai, tr_port port,
             const void * buf, size_t buflen)
 {
-    int sockfd;
+    tr_socket_t sockfd;
 
     if (ai->ai_addr->sa_family == AF_INET)
         sockfd = session->udp_socket;
     else if (ai->ai_addr->sa_family == AF_INET6)
         sockfd = session->udp6_socket;
     else
-        sockfd = -1;
+        sockfd = TR_BAD_SOCKET;
 
-    if (sockfd < 0) {
+    if (sockfd == TR_BAD_SOCKET) {
         errno = EAFNOSUPPORT;
         return -1;
     }
@@ -108,7 +108,7 @@ static tau_transaction_t
 tau_transaction_new (void)
 {
     tau_transaction_t tmp;
-    tr_cryptoRandBuf (&tmp, sizeof (tau_transaction_t));
+    tr_rand_buffer (&tmp, sizeof (tau_transaction_t));
     return tmp;
 }
 
@@ -123,7 +123,7 @@ typedef enum
 tau_action_t;
 
 static bool
-is_tau_response_message (int action, int msglen)
+is_tau_response_message (tau_action_t action, size_t msglen)
 {
     if (action == TAU_ACTION_CONNECT) return msglen == 16;
     if (action == TAU_ACTION_ANNOUNCE) return msglen >= 20;

@@ -4,7 +4,7 @@
  * It may be used under the GNU GPL versions 2 or 3
  * or any future license endorsed by Mnemosyne LLC.
  *
- * $Id$
+ * $Id: variant-json.c 14428 2015-01-02 11:15:31Z mikedld $
  */
 
 #include <assert.h>
@@ -216,14 +216,14 @@ extract_escaped_string (const char       * in,
                           UTF8 str8_buf[8] = { 0, 0, 0, 0, 0, 0, 0, 0 };
                           UTF8 * str8_walk = str8_buf;
                           UTF8 * str8_end = str8_buf + 8;
-    
+
                           if (ConvertUTF32toUTF8 (&str32_walk, str32_end, &str8_walk, str8_end, 0) == 0)
                             {
                               const size_t len = str8_walk - str8_buf;
                               evbuffer_add (buf, str8_buf, len);
                               unescaped = true;
                             }
-    
+
                           in += 6;
                           break;
                         }
@@ -604,7 +604,7 @@ jsonContainerEndFunc (const tr_variant * val,
                       void             * vdata)
 {
   struct jsonWalk * data = vdata;
-  int emptyContainer = false;
+  bool emptyContainer = false;
 
   jsonPopParent (data);
 

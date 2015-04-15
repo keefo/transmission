@@ -4,7 +4,7 @@
  * It may be used under the GNU GPL versions 2 or 3
  * or any future license endorsed by Mnemosyne LLC.
  *
- * $Id$
+ * $Id: stats-dialog.h 14391 2014-12-21 13:57:15Z mikedld $
  */
 
 #ifndef STATS_DIALOG_H
@@ -12,22 +12,17 @@
 
 #include <QDialog>
 
+#include "ui_stats-dialog.h"
+
 class Session;
-class QLabel;
 class QTimer;
 
 class StatsDialog: public QDialog
 {
     Q_OBJECT
 
-  signals:
-    void accepted ();
-
-  public slots:
-    void updateStats ();
-
   private slots:
-    void onTimer ();
+    void updateStats ();
 
   public:
     StatsDialog (Session&, QWidget * parent = 0);
@@ -37,15 +32,7 @@ class StatsDialog: public QDialog
   private:
     Session & mySession;
     QTimer * myTimer;
-    QLabel * myCurrentUp;
-    QLabel * myCurrentDown;
-    QLabel * myCurrentRatio;
-    QLabel * myCurrentDuration;
-    QLabel * myStartCount;
-    QLabel * myTotalUp;
-    QLabel * myTotalDown;
-    QLabel * myTotalRatio;
-    QLabel * myTotalDuration;
+    Ui::StatsDialog ui;
 };
 
 #endif

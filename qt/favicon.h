@@ -4,7 +4,7 @@
  * It may be used under the GNU GPL versions 2 or 3
  * or any future license endorsed by Mnemosyne LLC.
  *
- * $Id$
+ * $Id: favicon.h 14457 2015-01-20 23:28:38Z mikedld $
  */
 
 #ifndef FAVICON_CACHE_H
@@ -21,11 +21,12 @@ class QUrl;
 
 class Favicons: public QObject
 {
-    Q_OBJECT;
+    Q_OBJECT
 
   public:
 
     static QString getHost( const QUrl& url );
+    static QSize getIconSize ();
 
   public:
 

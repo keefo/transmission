@@ -1,10 +1,10 @@
 /*
  * This file Copyright (C) 2009-2014 Mnemosyne LLC
  *
- * It may be used under the GNU Public License v2 or v3 licenses,
+ * It may be used under the GNU GPL versions 2 or 3
  * or any future license endorsed by Mnemosyne LLC.
  *
- * $Id$
+ * $Id: torrent-delegate.cc 14466 2015-01-29 21:53:05Z mikedld $
  */
 
 
@@ -24,6 +24,7 @@
 #include "torrent.h"
 #include "torrent-delegate.h"
 #include "torrent-model.h"
+#include "utils.h"
 
 enum
 {
@@ -31,14 +32,97 @@ enum
   BAR_HEIGHT = 12
 };
 
-QColor TorrentDelegate :: greenBrush;
-QColor TorrentDelegate :: blueBrush;
-QColor TorrentDelegate :: silverBrush;
-QColor TorrentDelegate :: greenBack;
-QColor TorrentDelegate :: blueBack;
-QColor TorrentDelegate :: silverBack;
+QColor TorrentDelegate::greenBrush;
+QColor TorrentDelegate::blueBrush;
+QColor TorrentDelegate::silverBrush;
+QColor TorrentDelegate::greenBack;
+QColor TorrentDelegate::blueBack;
+QColor TorrentDelegate::silverBack;
 
-TorrentDelegate :: TorrentDelegate (QObject * parent):
+namespace
+{
+  class ItemLayout
+  {
+    private:
+      QString myNameText;
+      QString myStatusText;
+      QString myProgressText;
+
+    public:
+      QFont nameFont;
+      QFont statusFont;
+      QFont progressFont;
+
+      QRect iconRect;
+      QRect emblemRect;
+      QRect nameRect;
+      QRect statusRect;
+      QRect barRect;
+      QRect progressRect;
+
+    public:
+      ItemLayout(const QString& nameText, const QString& statusText, const QString& progressText,
+                 const QIcon& emblemIcon, const QFont& baseFont, Qt::LayoutDirection direction,
+                 const QPoint& topLeft, int width);
+
+      QSize size () const
+      {
+        return (iconRect | nameRect | statusRect | barRect | progressRect).size ();
+      }
+
+      QString nameText () const { return elidedText (nameFont, myNameText, nameRect.width ()); }
+      QString statusText () const { return elidedText (statusFont, myStatusText, statusRect.width ()); }
+      QString progressText () const  { return elidedText (progressFont, myProgressText, progressRect.width ()); }
+
+    private:
+      QString elidedText (const QFont& font, const QString& text, int width) const
+      {
+        return QFontMetrics (font).elidedText (text, Qt::ElideRight, width);
+      }
+  };
+
+  ItemLayout::ItemLayout(const QString& nameText, const QString& statusText, const QString& progressText,
+                         const QIcon& emblemIcon, const QFont& baseFont, Qt::LayoutDirection direction,
+                         const QPoint& topLeft, int width):
+    myNameText (nameText),
+    myStatusText (statusText),
+    myProgressText (progressText),
+    nameFont (baseFont),
+    statusFont (baseFont),
+    progressFont (baseFont)
+  {
+    const QStyle * style (qApp->style ());
+    const int iconSize (style->pixelMetric (QStyle::PM_LargeIconSize));
+
+    nameFont.setWeight (QFont::Bold);
+    const QFontMetrics nameFM (nameFont);
+    const QSize nameSize (nameFM.size (0, myNameText));
+
+    statusFont.setPointSize (static_cast<int> (statusFont.pointSize () * 0.9));
+    const QFontMetrics statusFM (statusFont);
+    const QSize statusSize (statusFM.size (0, myStatusText));
+
+    progressFont.setPointSize (static_cast<int> (progressFont.pointSize () * 0.9));
+    const QFontMetrics progressFM (progressFont);
+    const QSize progressSize (progressFM.size (0, myProgressText));
+
+    QRect baseRect (topLeft, QSize (width, 0));
+    Utils::narrowRect (baseRect, iconSize + GUI_PAD, 0, direction);
+
+    nameRect = baseRect.adjusted(0, 0, 0, nameSize.height ());
+    statusRect = nameRect.adjusted(0, nameRect.height () + 1, 0, statusSize.height () + 1);
+    barRect = statusRect.adjusted(0, statusRect.height () + 1, 0, BAR_HEIGHT + 1);
+    progressRect = barRect.adjusted (0, barRect.height () + 1, 0, progressSize.height () + 1);
+    iconRect = style->alignedRect (direction, Qt::AlignLeft | Qt::AlignVCenter,
+                                   QSize (iconSize, iconSize),
+                                   QRect (topLeft, QSize (width, progressRect.bottom () - nameRect.top ())));
+    emblemRect = style->alignedRect (direction, Qt::AlignRight | Qt::AlignBottom,
+                                     emblemIcon.actualSize (iconRect.size () / 2, QIcon::Normal, QIcon::On),
+                                     iconRect);
+  }
+}
+
+TorrentDelegate::TorrentDelegate (QObject * parent):
   QStyledItemDelegate (parent),
   myProgressBarStyle (new QStyleOptionProgressBar)
 {
@@ -55,7 +139,7 @@ TorrentDelegate :: TorrentDelegate (QObject * parent):
   silverBack = QColor ("grey");
 }
 
-TorrentDelegate :: ~TorrentDelegate ()
+TorrentDelegate::~TorrentDelegate ()
 {
   delete myProgressBarStyle;
 }
@@ -65,7 +149,7 @@ TorrentDelegate :: ~TorrentDelegate ()
 ***/
 
 QSize
-TorrentDelegate :: margin (const QStyle& style) const
+TorrentDelegate::margin (const QStyle& style) const
 {
   Q_UNUSED (style);
 
@@ -73,7 +157,7 @@ TorrentDelegate :: margin (const QStyle& style) const
 }
 
 QString
-TorrentDelegate :: progressString (const Torrent& tor) const
+TorrentDelegate::progressString (const Torrent& tor) const
 {
   const bool isMagnet (!tor.hasMetadata());
   const bool isDone (tor.isDone ());
@@ -85,15 +169,17 @@ TorrentDelegate :: progressString (const Torrent& tor) const
 
   if (isMagnet) // magnet link with no metadata
     {
-      // %1 is the percentage of torrent metadata downloaded
+      //: First part of torrent progress string;
+      //: %1 is the percentage of torrent metadata downloaded
       str = tr ("Magnetized transfer - retrieving metadata (%1%)")
             .arg (Formatter::percentToString (tor.metadataPercentDone() * 100.0));
     }
   else if (!isDone) // downloading
     {
-      /* %1 is how much we've got,
-         %2 is how much we'll have when done,
-         %3 is a percentage of the two */
+      //: First part of torrent progress string;
+      //: %1 is how much we've got,
+      //: %2 is how much we'll have when done,
+      //: %3 is a percentage of the two
       str = tr ("%1 of %2 (%3%)")
             .arg (Formatter::sizeToString (haveTotal))
             .arg (Formatter::sizeToString (tor.sizeWhenDone()))
@@ -103,12 +189,13 @@ TorrentDelegate :: progressString (const Torrent& tor) const
     {
       if (hasSeedRatio)
         {
-          /* %1 is how much we've got,
-             %2 is the torrent's total size,
-             %3 is a percentage of the two,
-             %4 is how much we've uploaded,
-             %5 is our upload-to-download ratio
-             %6 is the ratio we want to reach before we stop uploading */
+          //: First part of torrent progress string;
+          //: %1 is how much we've got,
+          //: %2 is the torrent's total size,
+          //: %3 is a percentage of the two,
+          //: %4 is how much we've uploaded,
+          //: %5 is our upload-to-download ratio,
+          //: %6 is the ratio we want to reach before we stop uploading
           str = tr ("%1 of %2 (%3%), uploaded %4 (Ratio: %5 Goal: %6)")
                 .arg (Formatter::sizeToString (haveTotal))
                 .arg (Formatter::sizeToString (tor.totalSize()))
@@ -119,11 +206,12 @@ TorrentDelegate :: progressString (const Torrent& tor) const
         }
         else
         {
-            /* %1 is how much we've got,
-               %2 is the torrent's total size,
-               %3 is a percentage of the two,
-               %4 is how much we've uploaded,
-               %5 is our upload-to-download ratio */
+            //: First part of torrent progress string;
+            //: %1 is how much we've got,
+            //: %2 is the torrent's total size,
+            //: %3 is a percentage of the two,
+            //: %4 is how much we've uploaded,
+            //: %5 is our upload-to-download ratio
             str = tr ("%1 of %2 (%3%), uploaded %4 (Ratio: %5)")
                   .arg (Formatter::sizeToString (haveTotal))
                   .arg (Formatter::sizeToString (tor.totalSize()))
@@ -136,10 +224,11 @@ TorrentDelegate :: progressString (const Torrent& tor) const
     {
       if (hasSeedRatio)
         {
-          /* %1 is the torrent's total size,
-             %2 is how much we've uploaded,
-             %3 is our upload-to-download ratio,
-             %4 is the ratio we want to reach before we stop uploading */
+          //: First part of torrent progress string;
+          //: %1 is the torrent's total size,
+          //: %2 is how much we've uploaded,
+          //: %3 is our upload-to-download ratio,
+          //: %4 is the ratio we want to reach before we stop uploading
           str = tr ("%1, uploaded %2 (Ratio: %3 Goal: %4)")
                 .arg (Formatter::sizeToString (haveTotal))
                 .arg (Formatter::sizeToString (tor.uploadedEver()))
@@ -148,9 +237,10 @@ TorrentDelegate :: progressString (const Torrent& tor) const
         }
       else // seeding w/o a ratio
         {
-          /* %1 is the torrent's total size,
-             %2 is how much we've uploaded,
-             %3 is our upload-to-download ratio */
+          //: First part of torrent progress string;
+          //: %1 is the torrent's total size,
+          //: %2 is how much we've uploaded,
+          //: %3 is our upload-to-download ratio
           str = tr ("%1, uploaded %2 (Ratio: %3)")
                 .arg (Formatter::sizeToString (haveTotal))
                 .arg (Formatter::sizeToString (tor.uploadedEver()))
@@ -161,18 +251,22 @@ TorrentDelegate :: progressString (const Torrent& tor) const
   // add time when downloading
   if ((hasSeedRatio && tor.isSeeding()) || tor.isDownloading())
     {
-      str += tr (" - ");
       if (tor.hasETA ())
-        str += tr ("%1 left").arg (Formatter::timeToString (tor.getETA ()));
+        //: Second (optional) part of torrent progress string;
+        //: %1 is duration;
+        //: notice that leading space (before the dash) is included here
+        str += tr (" - %1 left").arg (Formatter::timeToString (tor.getETA ()));
       else
-        str += tr ("Remaining time unknown");
+        //: Second (optional) part of torrent progress string;
+        //: notice that leading space (before the dash) is included here
+        str += tr (" - Remaining time unknown");
     }
 
-    return str;
+    return str.trimmed ();
 }
 
 QString
-TorrentDelegate :: shortTransferString (const Torrent& tor) const
+TorrentDelegate::shortTransferString (const Torrent& tor) const
 {
   QString str;
   const bool haveMeta (tor.hasMetadata());
@@ -180,18 +274,18 @@ TorrentDelegate :: shortTransferString (const Torrent& tor) const
   const bool haveUp (haveMeta && tor.peersWeAreUploadingTo()>0);
 
   if (haveDown)
-    str = tr ("%1   %2")
-          .arg(Formatter::downloadSpeedToString(tor.downloadSpeed()))
-          .arg(Formatter::uploadSpeedToString(tor.uploadSpeed()));
+    str = Formatter::downloadSpeedToString(tor.downloadSpeed()) +
+          QLatin1String ("   ") +
+          Formatter::uploadSpeedToString(tor.uploadSpeed());
 
   else if (haveUp)
     str = Formatter::uploadSpeedToString(tor.uploadSpeed());
 
-  return str;
+  return str.trimmed ();
 }
 
 QString
-TorrentDelegate :: shortStatusString (const Torrent& tor) const
+TorrentDelegate::shortStatusString (const Torrent& tor) const
 {
   QString str;
   static const QChar ratioSymbol (0x262F);
@@ -204,10 +298,9 @@ TorrentDelegate :: shortStatusString (const Torrent& tor) const
 
       case TR_STATUS_DOWNLOAD:
       case TR_STATUS_SEED:
-        str = tr("%1    %2 %3")
-              .arg(shortTransferString(tor))
-              .arg(tr("Ratio:"))
-              .arg(Formatter::ratioToString(tor.ratio()));
+        str = shortTransferString(tor) +
+              QLatin1String ("    ") +
+              tr("Ratio: %1").arg(Formatter::ratioToString(tor.ratio()));
         break;
 
       default:
@@ -215,11 +308,11 @@ TorrentDelegate :: shortStatusString (const Torrent& tor) const
         break;
     }
 
-  return str;
+  return str.trimmed ();
 }
 
 QString
-TorrentDelegate :: statusString (const Torrent& tor) const
+TorrentDelegate::statusString (const Torrent& tor) const
 {
   QString str;
 
@@ -240,23 +333,33 @@ TorrentDelegate :: statusString (const Torrent& tor) const
       case TR_STATUS_DOWNLOAD:
         if (!tor.hasMetadata())
           {
-            str = tr ("Downloading metadata from %n peer(s) (%1% done)", 0, tor.peersWeAreDownloadingFrom ())
+            str = tr ("Downloading metadata from %Ln peer(s) (%1% done)", 0, tor.peersWeAreDownloadingFrom ())
                   .arg (Formatter::percentToString (100.0 * tor.metadataPercentDone ()));
           }
         else
           {
             /* it would be nicer for translation if this was all one string, but I don't see how to do multiple %n's in tr() */
-            str = tr ("Downloading from %1 of %n connected peer(s)", 0, tor.connectedPeersAndWebseeds ())
-                  .arg (tor.peersWeAreDownloadingFrom ());
+            if (tor.connectedPeersAndWebseeds () == 0)
+              //: First part of phrase "Downloading from ... peer(s) and ... web seed(s)"
+              str = tr ("Downloading from %Ln peer(s)", 0, tor.peersWeAreDownloadingFrom ());
+            else
+              //: First part of phrase "Downloading from ... of ... connected peer(s) and ... web seed(s)"
+              str = tr ("Downloading from %1 of %Ln connected peer(s)", 0, tor.connectedPeersAndWebseeds ())
+                    .arg (tor.peersWeAreDownloadingFrom ());
 
             if (tor.webseedsWeAreDownloadingFrom())
-              str += tr(" and %n web seed(s)", "", tor.webseedsWeAreDownloadingFrom());
+              //: Second (optional) part of phrase "Downloading from ... of ... connected peer(s) and ... web seed(s)";
+              //: notice that leading space (before "and") is included here
+              str += tr(" and %Ln web seed(s)", 0, tor.webseedsWeAreDownloadingFrom());
           }
         break;
 
       case TR_STATUS_SEED:
-        str = tr ("Seeding to %1 of %n connected peer(s)", 0, tor.connectedPeers ())
-              .arg (tor.peersWeAreUploadingTo ());
+        if (tor.connectedPeers () == 0)
+          str = tr ("Seeding to %Ln peer(s)", 0, tor.peersWeAreUploadingTo ());
+        else
+          str = tr ("Seeding to %1 of %Ln connected peer(s)", 0, tor.connectedPeers ())
+                .arg (tor.peersWeAreUploadingTo ());
         break;
 
       default:
@@ -271,60 +374,34 @@ TorrentDelegate :: statusString (const Torrent& tor) const
         str += tr (" - ") + s;
     }
 
-  return str;
+  return str.trimmed ();
 }
 
 /***
 ****
 ***/
 
-namespace
+QSize
+TorrentDelegate::sizeHint (const QStyleOptionViewItem& option, const Torrent& tor) const
 {
-  int MAX3 (int a, int b, int c)
-    {
-      const int ab (a > b ? a : b);
-      return ab > c ? ab : c;
-    }
+  const QSize m (margin (*qApp->style ()));
+  const ItemLayout layout (tor.name (), progressString (tor), statusString (tor), QIcon (),
+                           option.font, option.direction, QPoint (0, 0), option.rect.width () - m.width () * 2);
+  return layout.size () + m * 2;
 }
 
 QSize
-TorrentDelegate :: sizeHint (const QStyleOptionViewItem& option, const Torrent& tor) const
-{
-  const QStyle* style (QApplication::style ());
-  static const int iconSize (style->pixelMetric (QStyle::PM_MessageBoxIconSize));
-
-  QFont nameFont (option.font);
-  nameFont.setWeight (QFont::Bold);
-  const QFontMetrics nameFM (nameFont);
-  const QString nameStr (tor.name ());
-  const int nameWidth = nameFM.width (nameStr);
-  QFont statusFont (option.font);
-  statusFont.setPointSize (int (option.font.pointSize () * 0.9));
-  const QFontMetrics statusFM (statusFont);
-  const QString statusStr (statusString (tor));
-  const int statusWidth = statusFM.width (statusStr);
-  QFont progressFont (statusFont);
-  const QFontMetrics progressFM (progressFont);
-  const QString progressStr (progressString (tor));
-  const int progressWidth = progressFM.width (progressStr);
-  const QSize m (margin (*style));
-  return QSize (m.width()*2 + iconSize + GUI_PAD + MAX3 (nameWidth, statusWidth, progressWidth),
-                //m.height()*3 + nameFM.lineSpacing() + statusFM.lineSpacing()*2 + progressFM.lineSpacing());
-                m.height()*3 + nameFM.lineSpacing() + statusFM.lineSpacing() + BAR_HEIGHT + progressFM.lineSpacing());
-}
-
-QSize
-TorrentDelegate :: sizeHint (const QStyleOptionViewItem  & option,
-                             const QModelIndex           & index) const
+TorrentDelegate::sizeHint (const QStyleOptionViewItem  & option,
+                           const QModelIndex           & index) const
 {
   const Torrent * tor (index.data (TorrentModel::TorrentRole).value<const Torrent*>());
   return sizeHint (option, *tor);
 }
 
 void
-TorrentDelegate :: paint (QPainter                    * painter,
-                          const QStyleOptionViewItem  & option,
-                          const QModelIndex           & index) const
+TorrentDelegate::paint (QPainter                    * painter,
+                        const QStyleOptionViewItem  & option,
+                        const QModelIndex           & index) const
 {
   const Torrent * tor (index.data (TorrentModel::TorrentRole).value<const Torrent*>());
   painter->save ();
@@ -334,8 +411,8 @@ TorrentDelegate :: paint (QPainter                    * painter,
 }
 
 void
-TorrentDelegate :: setProgressBarPercentDone (const QStyleOptionViewItem & option,
-                                              const Torrent              & tor) const
+TorrentDelegate::setProgressBarPercentDone (const QStyleOptionViewItem & option,
+                                            const Torrent              & tor) const
 {
   double seedRatioLimit;
   if (tor.isSeeding() && tor.getSeedRatio(seedRatioLimit))
@@ -348,47 +425,38 @@ TorrentDelegate :: setProgressBarPercentDone (const QStyleOptionViewItem & optio
     {
       const bool isMagnet (!tor.hasMetadata ());
       myProgressBarStyle->direction = option.direction;
-      myProgressBarStyle->progress = int(myProgressBarStyle->minimum + (((isMagnet ? tor.metadataPercentDone() : tor.percentDone()) * (myProgressBarStyle->maximum - myProgressBarStyle->minimum))));
+      myProgressBarStyle->progress = static_cast<int> (myProgressBarStyle->minimum + (((isMagnet ? tor.metadataPercentDone() : tor.percentDone()) * (myProgressBarStyle->maximum - myProgressBarStyle->minimum))));
     }
 }
 
 void
-TorrentDelegate :: drawTorrent (QPainter                   * painter,
-                                const QStyleOptionViewItem & option,
-                                const Torrent              & tor) const
+TorrentDelegate::drawTorrent (QPainter                   * painter,
+                              const QStyleOptionViewItem & option,
+                              const Torrent              & tor) const
 {
-  const QStyle * style (QApplication::style ());
-  static const int iconSize (style->pixelMetric (QStyle::PM_LargeIconSize));
-  QFont nameFont (option.font);
-  nameFont.setWeight (QFont::Bold);
-  const QFontMetrics nameFM (nameFont);
-  const QString nameStr (tor.name ());
-  const QSize nameSize (nameFM.size (0, nameStr));
-  QFont statusFont (option.font);
-  statusFont.setPointSize (int (option.font.pointSize () * 0.9));
-  const QFontMetrics statusFM (statusFont);
-  const QString statusStr (progressString (tor));
-  QFont progressFont (statusFont);
-  const QFontMetrics progressFM (progressFont);
-  const QString progressStr (statusString (tor));
+  const QStyle * style (qApp->style ());
+
   const bool isPaused (tor.isPaused ());
+
+  const bool isItemSelected ((option.state & QStyle::State_Selected) != 0);
+  const bool isItemEnabled ((option.state & QStyle::State_Enabled) != 0);
+  const bool isItemActive ((option.state & QStyle::State_Active) != 0);
 
   painter->save ();
 
-  if (option.state & QStyle::State_Selected)
+  if (isItemSelected)
     {
-      QPalette::ColorGroup cg = option.state & QStyle::State_Enabled
-                              ? QPalette::Normal : QPalette::Disabled;
-      if (cg == QPalette::Normal && !(option.state & QStyle::State_Active))
+      QPalette::ColorGroup cg = isItemEnabled ? QPalette::Normal : QPalette::Disabled;
+      if (cg == QPalette::Normal && !isItemActive)
         cg = QPalette::Inactive;
 
       painter->fillRect(option.rect, option.palette.brush(cg, QPalette::Highlight));
     }
 
   QIcon::Mode im;
-  if (isPaused || !(option.state & QStyle::State_Enabled))
+  if (isPaused || !isItemEnabled)
     im = QIcon::Disabled;
-  else if (option.state & QStyle::State_Selected)
+  else if (isItemSelected)
     im = QIcon::Selected;
   else
     im = QIcon::Normal;
@@ -400,13 +468,13 @@ TorrentDelegate :: drawTorrent (QPainter                   * painter,
     qs = QIcon::On;
 
   QPalette::ColorGroup cg = QPalette::Normal;
-  if (isPaused || !(option.state & QStyle::State_Enabled))
+  if (isPaused || !isItemEnabled)
     cg = QPalette::Disabled;
-  if (cg == QPalette::Normal && !(option.state & QStyle::State_Active))
+  if (cg == QPalette::Normal && !isItemActive)
     cg = QPalette::Inactive;
 
   QPalette::ColorRole cr;
-  if (option.state & QStyle::State_Selected)
+  if (isItemSelected)
     cr = QPalette::HighlightedText;
   else
     cr = QPalette::Text;
@@ -416,35 +484,30 @@ TorrentDelegate :: drawTorrent (QPainter                   * painter,
     progressBarState = QStyle::State_None;
   progressBarState |= QStyle::State_Small;
 
+  const QIcon::Mode emblemIm = isItemSelected ? QIcon::Selected : QIcon::Normal;
+  const QIcon emblemIcon = tor.hasError () ? QIcon::fromTheme (QLatin1String ("emblem-important"), style->standardIcon (QStyle::SP_MessageBoxWarning)) : QIcon ();
+
   // layout
   const QSize m (margin (*style));
-  QRect fillArea (option.rect);
-  fillArea.adjust (m.width(), m.height(), -m.width(), -m.height());
-  QRect iconArea (fillArea.x (), fillArea.y () +  (fillArea.height () - iconSize) / 2, iconSize, iconSize);
-  QRect nameArea (iconArea.x () + iconArea.width () + GUI_PAD, fillArea.y (),
-                  fillArea.width () - GUI_PAD - iconArea.width (), nameSize.height ());
-  QRect statusArea (nameArea);
-  statusArea.moveTop (nameArea.y () + nameFM.lineSpacing ());
-  statusArea.setHeight (nameSize.height ());
-  QRect barArea (statusArea);
-  barArea.setHeight (BAR_HEIGHT);
-  barArea.moveTop (statusArea.y () + statusFM.lineSpacing ());
-  QRect progArea (statusArea);
-  progArea.moveTop (barArea.y () + barArea.height ());
+  const QRect contentRect (option.rect.adjusted (m.width(), m.height(), -m.width(), -m.height()));
+  const ItemLayout layout (tor.name (), progressString (tor), statusString (tor), emblemIcon,
+                           option.font, option.direction, contentRect.topLeft (), contentRect.width ());
 
   // render
-  if (tor.hasError ())
+  if (tor.hasError () && !isItemSelected)
     painter->setPen (QColor ("red"));
   else
     painter->setPen (option.palette.color (cg, cr));
-  tor.getMimeTypeIcon().paint (painter, iconArea, Qt::AlignCenter, im, qs);
-  painter->setFont (nameFont);
-  painter->drawText (nameArea, 0, nameFM.elidedText (nameStr, Qt::ElideRight, nameArea.width ()));
-  painter->setFont (statusFont);
-  painter->drawText (statusArea, 0, statusFM.elidedText (statusStr, Qt::ElideRight, statusArea.width ()));
-  painter->setFont (progressFont);
-  painter->drawText (progArea, 0, progressFM.elidedText (progressStr, Qt::ElideRight, progArea.width ()));
-  myProgressBarStyle->rect = barArea;
+  tor.getMimeTypeIcon().paint (painter, layout.iconRect, Qt::AlignCenter, im, qs);
+  if (!emblemIcon.isNull ())
+    emblemIcon.paint (painter, layout.emblemRect, Qt::AlignCenter, emblemIm, qs);
+  painter->setFont (layout.nameFont);
+  painter->drawText (layout.nameRect, Qt::AlignLeft | Qt::AlignVCenter, layout.nameText ());
+  painter->setFont (layout.statusFont);
+  painter->drawText (layout.statusRect, Qt::AlignLeft | Qt::AlignVCenter, layout.statusText ());
+  painter->setFont (layout.progressFont);
+  painter->drawText (layout.progressRect, Qt::AlignLeft | Qt::AlignVCenter, layout.progressText ());
+  myProgressBarStyle->rect = layout.barRect;
   if (tor.isDownloading())
     {
       myProgressBarStyle->palette.setBrush (QPalette::Highlight, blueBrush);

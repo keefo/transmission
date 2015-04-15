@@ -4,7 +4,7 @@
  * It may be used under the GNU GPL versions 2 or 3
  * or any future license endorsed by Mnemosyne LLC.
  *
- * $Id$
+ * $Id: edit.c 14491 2015-04-11 10:51:59Z mikedld $
  */
 
 #include <stdio.h> /* fprintf () */
@@ -14,6 +14,7 @@
 #include <event2/buffer.h>
 
 #include <libtransmission/transmission.h>
+#include <libtransmission/error.h>
 #include <libtransmission/tr-getopt.h>
 #include <libtransmission/utils.h>
 #include <libtransmission/variant.h>
@@ -290,6 +291,10 @@ main (int argc, char * argv[])
   int i;
   int changedCount = 0;
 
+#ifdef _WIN32
+  tr_win32_make_args_utf8 (&argc, &argv);
+#endif
+
   files = tr_new0 (const char*, argc);
 
   tr_logSetLevel (TR_LOG_ERROR);
@@ -324,12 +329,14 @@ main (int argc, char * argv[])
       tr_variant top;
       bool changed = false;
       const char * filename = files[i];
+      tr_error * error = NULL;
 
       printf ("%s\n", filename);
 
-      if (tr_variantFromFile (&top, TR_VARIANT_FMT_BENC, filename))
+      if (!tr_variantFromFile (&top, TR_VARIANT_FMT_BENC, filename, &error))
         {
-          printf ("\tError reading file\n");
+          printf ("\tError reading file: %s\n", error->message);
+          tr_error_free (error);
           continue;
         }
 

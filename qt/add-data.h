@@ -4,7 +4,7 @@
  * It may be used under the GNU GPL versions 2 or 3
  * or any future license endorsed by Mnemosyne LLC.
  *
- * $Id$
+ * $Id: add-data.h 14241 2014-01-21 03:10:30Z jordan $
  */
 
 #ifndef ADD_DATA_H

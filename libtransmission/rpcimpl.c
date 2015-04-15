@@ -4,7 +4,7 @@
  * It may be used under the GNU GPL versions 2 or 3
  * or any future license endorsed by Mnemosyne LLC.
  *
- * $Id$
+ * $Id: rpcimpl.c 14428 2015-01-02 11:15:31Z mikedld $
  */
 
 #include <assert.h>
@@ -13,15 +13,16 @@
 #include <stdlib.h> /* strtol */
 #include <string.h> /* strcmp */
 
-#ifdef HAVE_ZLIB
- #include <zlib.h>
-#endif
+#include <zlib.h>
 
 #include <event2/buffer.h>
 
 #include "transmission.h"
 #include "completion.h"
+#include "crypto-utils.h"
+#include "error.h"
 #include "fdlimit.h"
+#include "file.h"
 #include "log.h"
 #include "platform-quota.h" /* tr_device_info_get_free_space() */
 #include "rpcimpl.h"
@@ -250,14 +251,14 @@ queueMoveBottom (tr_session               * session,
   return NULL;
 }
 
-static int 
-compareTorrentByQueuePosition (const void * va, const void * vb) 
-{ 
-  const tr_torrent * a = * (const tr_torrent **) va; 
-  const tr_torrent * b = * (const tr_torrent **) vb; 
+static int
+compareTorrentByQueuePosition (const void * va, const void * vb)
+{
+  const tr_torrent * a = * (const tr_torrent **) va;
+  const tr_torrent * b = * (const tr_torrent **) vb;
 
-  return a->queuePosition - b->queuePosition; 
-} 
+  return a->queuePosition - b->queuePosition;
+}
 
 static const char*
 torrentStart (tr_session               * session,
@@ -272,7 +273,7 @@ torrentStart (tr_session               * session,
   assert (idle_data == NULL);
 
   torrents = getTorrents (session, args_in, &torrentCount);
-  qsort (torrents, torrentCount, sizeof (tr_torrent *), compareTorrentByQueuePosition); 
+  qsort (torrents, torrentCount, sizeof (tr_torrent *), compareTorrentByQueuePosition);
   for (i=0; i<torrentCount; ++i)
     {
       tr_torrent * tor = torrents[i];
@@ -300,7 +301,7 @@ torrentStartNow (tr_session               * session,
   assert (idle_data == NULL);
 
   torrents = getTorrents (session, args_in, &torrentCount);
-  qsort (torrents, torrentCount, sizeof (tr_torrent *), compareTorrentByQueuePosition); 
+  qsort (torrents, torrentCount, sizeof (tr_torrent *), compareTorrentByQueuePosition);
   for (i=0; i<torrentCount; ++i)
     {
       tr_torrent * tor = torrents[i];
@@ -1488,13 +1489,14 @@ gotNewBlocklist (tr_session       * session,
     }
   else /* successfully fetched the blocklist... */
     {
-      int fd;
+      tr_sys_file_t fd;
       int err;
       char * filename;
       z_stream stream;
       const char * configDir = tr_sessionGetConfigDir (session);
       const size_t buflen = 1024 * 128; /* 128 KiB buffer */
       uint8_t * buf = tr_valloc (buflen);
+      tr_error * error = NULL;
 
       /* this is an odd Magic Number required by zlib to enable gz support.
          See zlib's inflateInit2 () documentation for a full description */
@@ -1507,10 +1509,13 @@ gotNewBlocklist (tr_session       * session,
       stream.avail_in = response_byte_count;
       inflateInit2 (&stream, windowBits);
 
-      filename = tr_buildPath (configDir, "blocklist.tmp", NULL);
-      fd = tr_open_file_for_writing (filename);
-      if (fd < 0)
-        tr_snprintf (result, sizeof (result), _("Couldn't save file \"%1$s\": %2$s"), filename, tr_strerror (errno));
+      filename = tr_buildPath (configDir, "blocklist.tmp.XXXXXX", NULL);
+      fd = tr_sys_file_open_temp (filename, &error);
+      if (fd == TR_BAD_SYS_FILE)
+        {
+          tr_snprintf (result, sizeof (result), _("Couldn't save file \"%1$s\": %2$s"), filename, error->message);
+          tr_error_clear (&error);
+        }
 
       for (;;)
         {
@@ -1520,10 +1525,10 @@ gotNewBlocklist (tr_session       * session,
 
           if (stream.avail_out < buflen)
             {
-              const int e = write (fd, buf, buflen - stream.avail_out);
-              if (e < 0)
+              if (!tr_sys_file_write (fd, buf, buflen - stream.avail_out, NULL, &error))
                 {
-                  tr_snprintf (result, sizeof (result), _("Couldn't save file \"%1$s\": %2$s"), filename, tr_strerror (errno));
+                  tr_snprintf (result, sizeof (result), _("Couldn't save file \"%1$s\": %2$s"), filename, error->message);
+                  tr_error_clear (&error);
                   break;
                 }
             }
@@ -1539,10 +1544,13 @@ gotNewBlocklist (tr_session       * session,
       inflateEnd (&stream);
 
       if (err == Z_DATA_ERROR) /* couldn't inflate it... it's probably already uncompressed */
-        if (write (fd, response, response_byte_count) < 0)
-          tr_snprintf (result, sizeof (result), _("Couldn't save file \"%1$s\": %2$s"), filename, tr_strerror (errno));
+        if (!tr_sys_file_write (fd, response, response_byte_count, NULL, &error))
+          {
+            tr_snprintf (result, sizeof (result), _("Couldn't save file \"%1$s\": %2$s"), filename, error->message);
+            tr_error_clear (&error);
+          }
 
-      tr_close_file(fd);
+      tr_sys_file_close (fd, NULL);
 
       if (*result)
         {
@@ -1556,7 +1564,7 @@ gotNewBlocklist (tr_session       * session,
           tr_snprintf (result, sizeof (result), "success");
         }
 
-      tr_remove (filename);
+      tr_sys_path_remove (filename, NULL);
       tr_free (filename);
       tr_free (buf);
     }
@@ -1789,8 +1797,8 @@ torrentAdd (tr_session               * session,
 
           if (fname == NULL)
             {
-              int len;
-              char * metainfo = tr_base64_decode (metainfo_base64, -1, &len);
+              size_t len;
+              char * metainfo = tr_base64_decode_str (metainfo_base64, &len);
               tr_ctorSetMetainfo (ctor, (uint8_t*)metainfo, len);
               tr_free (metainfo);
             }

@@ -4,7 +4,7 @@
  * It may be used under the GNU GPL versions 2 or 3
  * or any future license endorsed by Mnemosyne LLC.
  *
- * $Id$
+ * $Id: app.h 14464 2015-01-28 22:57:46Z mikedld $
  */
 
 #ifndef QTR_APP_H
@@ -34,7 +34,7 @@ class MyApp: public QApplication
 
   public:
     void raise ();
-    bool notify (const QString& title, const QString& body) const;
+    bool notifyApp (const QString& title, const QString& body) const;
 
   public:
     Favicons favicons;
@@ -53,11 +53,11 @@ class MyApp: public QApplication
     QTranslator appTranslator;
 
   private slots:
-    void consentGiven ();
+    void consentGiven (int result);
     void onSessionSourceChanged ();
     void refreshPref (int key);
     void refreshTorrents ();
-    void onTorrentsAdded (QSet<int>);
+    void onTorrentsAdded (const QSet<int>& torrents);
     void onTorrentCompleted (int);
     void onNewTorrentChanged (int);
 
@@ -67,6 +67,11 @@ class MyApp: public QApplication
 
   private:
     void maybeUpdateBlocklist ();
+
+    void quitLater ();
 };
+
+#undef qApp
+#define qApp static_cast<MyApp*> (MyApp::instance ())
 
 #endif

@@ -1,5 +1,5 @@
 /******************************************************************************
- * $Id$
+ * $Id: Torrent.h 13828 2013-01-22 00:09:48Z livings124 $
  *
  * Copyright (c) 2006-2012 Transmission authors and contributors
  *

@@ -4,7 +4,7 @@
  * It may be used under the GNU GPL versions 2 or 3
  * or any future license endorsed by Mnemosyne LLC.
  *
- * $Id$
+ * $Id: session.h 14464 2015-01-28 22:57:46Z mikedld $
  */
 
 #ifndef TR_APP_SESSION_H
@@ -12,35 +12,46 @@
 
 #include <QObject>
 #include <QSet>
-#include <QBuffer>
-#include <QFileInfoList>
-#include <QNetworkAccessManager>
 #include <QString>
 #include <QStringList>
-#include <QUrl>
-#include <QNetworkReply>
-
-class QStringList;
-
-class AddData;
 
 #include <libtransmission/transmission.h>
 #include <libtransmission/quark.h>
 
+#include "rpc-client.h"
+
+class AddData;
+class Prefs;
+
 extern "C"
 {
-  struct evbuffer;
   struct tr_variant;
 }
 
-class Prefs;
+class FileAdded: public QObject
+{
+    Q_OBJECT
+
+  public:
+    FileAdded (int64_t tag, const QString& name): myTag (tag), myName (name) {}
+    ~FileAdded () {}
+    void setFileToDelete (const QString& file) { myDelFile = file; }
+
+  public slots:
+    void executed (int64_t tag, const QString& result, tr_variant * arguments);
+
+  private:
+    const int64_t myTag;
+    const QString myName;
+    QString myDelFile;
+};
 
 class Session: public QObject
 {
     Q_OBJECT
 
   public:
-    Session (const char * configDir, Prefs& prefs);
+    Session (const QString& configDir, Prefs& prefs);
     ~Session ();
 
   public:
@@ -51,9 +62,9 @@ class Session: public QObject
     void start ();
 
   public:
-    const QUrl& getRemoteUrl () const { return myUrl; }
-    const struct tr_session_stats& getStats () const { return myStats; }
-    const struct tr_session_stats& getCumulativeStats () const { return myCumulativeStats; }
+    const QUrl& getRemoteUrl () const { return myRpc.url (); }
+    const tr_session_stats& getStats () const { return myStats; }
+    const tr_session_stats& getCumulativeStats () const { return myCumulativeStats; }
     const QString& sessionVersion () const { return mySessionVersion; }
 
   public:
@@ -72,14 +83,12 @@ class Session: public QObject
     bool isLocal () const;
 
   private:
-    void updateStats (struct tr_variant * args);
-    void updateInfo (struct tr_variant * args);
-    void parseResponse (const char * json, size_t len);
-    static void localSessionCallback (tr_session *, struct evbuffer *, void *);
+    void updateStats (tr_variant * args);
+    void updateInfo (tr_variant * args);
 
   public:
-    void exec (const char * json);
-    void exec (const struct tr_variant * request);
+    void exec (tr_quark method, tr_variant * args, int64_t tag = -1);
+    void exec (const char* method, tr_variant * args, int64_t tag = -1);
 
   public:
     int64_t getUniqueTag () { return nextUniqueTag++; }
@@ -88,9 +97,8 @@ class Session: public QObject
     void sessionSet (const tr_quark key, const QVariant& variant);
     void pumpRequests ();
     void sendTorrentRequest (const char * request, const QSet<int>& torrentIds);
-    static void updateStats (struct tr_variant * d, struct tr_session_stats * stats);
+    static void updateStats (tr_variant * d, tr_session_stats * stats);
     void refreshTorrents (const QSet<int>& torrentIds);
-    QNetworkAccessManager * networkAccessManager ();
 
   public:
     void torrentSet (const QSet<int>& ids, const tr_quark key, bool val);
@@ -101,6 +109,7 @@ class Session: public QObject
     void torrentSet (const QSet<int>& ids, const tr_quark key, const QPair<int,QString>& val);
     void torrentSetLocation (const QSet<int>& ids, const QString& path, bool doMove);
     void torrentRenamePath (const QSet<int>& ids, const QString& oldpath, const QString& newname);
+    void addTorrent (const AddData& addme, tr_variant * top, bool trashOriginal);
 
   public slots:
     void pauseTorrents (const QSet<int>& torrentIds = QSet<int> ());
@@ -127,23 +136,21 @@ class Session: public QObject
     void refreshExtraStats (const QSet<int>& ids);
 
   private slots:
-    void onFinished (QNetworkReply * reply);
-    void onResponseReceived (const QByteArray& json);
+    void responseReceived (int64_t tag, const QString& result, tr_variant * args);
 
   signals:
-    void responseReceived (const QByteArray& json);
-    void executed (int64_t tag, const QString& result, struct tr_variant * arguments);
+    void executed (int64_t tag, const QString& result, tr_variant * arguments);
     void sourceChanged ();
     void portTested (bool isOpen);
     void statsUpdated ();
     void sessionUpdated ();
     void blocklistUpdated (int);
-    void torrentsUpdated (struct tr_variant * torrentList, bool completeList);
-    void torrentsRemoved (struct tr_variant * torrentList);
+    void torrentsUpdated (tr_variant * torrentList, bool completeList);
+    void torrentsRemoved (tr_variant * torrentList);
     void dataReadProgress ();
     void dataSendProgress ();
     void error (QNetworkReply::NetworkError);
-    void errorMessage (const QString);
+    void errorMessage (const QString&);
     void httpAuthenticationRequired ();
 
   private:
@@ -151,15 +158,12 @@ class Session: public QObject
     int64_t myBlocklistSize;
     Prefs& myPrefs;
     tr_session * mySession;
-    QString myConfigDir;
-    QString mySessionId;
+    QString const myConfigDir;
     QStringList myIdleJSON;
-    QUrl myUrl;
-    QNetworkAccessManager * myNAM;
-    struct tr_session_stats myStats;
-    struct tr_session_stats myCumulativeStats;
+    tr_session_stats myStats;
+    tr_session_stats myCumulativeStats;
     QString mySessionVersion;
+    RpcClient myRpc;
 };
 
 #endif
-

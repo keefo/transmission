@@ -4,18 +4,14 @@
  * It may be used under the GNU GPL versions 2 or 3
  * or any future license endorsed by Mnemosyne LLC.
  *
- * $Id$
+ * $Id: rpc-server.c 14493 2015-04-11 14:54:01Z mikedld $
  */
 
 #include <assert.h>
 #include <errno.h>
 #include <string.h> /* memcpy */
 
-#include <unistd.h>    /* close */
-
-#ifdef HAVE_ZLIB
- #include <zlib.h>
-#endif
+#include <zlib.h>
 
 #include <event2/buffer.h>
 #include <event2/event.h>
@@ -23,7 +19,9 @@
 #include <event2/http_struct.h> /* TODO: eventually remove this */
 
 #include "transmission.h"
-#include "crypto.h" /* tr_cryptoRandBuf (), tr_ssha1_matches () */
+#include "crypto.h" /* tr_ssha1_matches () */
+#include "crypto-utils.h" /* tr_rand_buffer () */
+#include "error.h"
 #include "fdlimit.h"
 #include "list.h"
 #include "log.h"
@@ -67,10 +65,8 @@ struct tr_rpc_server
     char             * sessionId;
     time_t             sessionIdExpiresAt;
 
-#ifdef HAVE_ZLIB
     bool               isStreamInitialized;
     z_stream           stream;
-#endif
 };
 
 #define dbgmsg(...) \
@@ -97,7 +93,7 @@ get_current_session_id (struct tr_rpc_server * server)
       const size_t pool_size = strlen (pool);
       unsigned char * buf = tr_new (unsigned char, n+1);
 
-      tr_cryptoRandBuf (buf, n);
+      tr_rand_buffer (buf, n);
       for (i=0; i<n; ++i)
         buf[i] = pool[ buf[i] % pool_size ];
       buf[n] = '\0';
@@ -331,9 +327,6 @@ add_response (struct evhttp_request * req,
               struct evbuffer       * out,
               struct evbuffer       * content)
 {
-#ifndef HAVE_ZLIB
-  evbuffer_add_buffer (out, content);
-#else
   const char * key = "Accept-Encoding";
   const char * encoding = evhttp_find_header (req->input_headers, key);
   const int do_compress = encoding && strstr (encoding, "gzip");
@@ -400,7 +393,6 @@ add_response (struct evhttp_request * req,
       evbuffer_commit_space (out, iovec, 1);
       deflateReset (&server->stream);
     }
-#endif
 }
 
 static void
@@ -438,27 +430,27 @@ serve_file (struct evhttp_request  * req,
     {
       void * file;
       size_t file_len;
-      struct evbuffer * content;
-      const int error = errno;
+      tr_error * error = NULL;
 
-      errno = 0;
       file_len = 0;
-      file = tr_loadFile (filename, &file_len);
-      content = evbuffer_new ();
-      evbuffer_add_reference (content, file, file_len, evbuffer_ref_cleanup_tr_free, file);
+      file = tr_loadFile (filename, &file_len, &error);
 
-      if (errno)
+      if (file == NULL)
         {
-          char * tmp = tr_strdup_printf ("%s (%s)", filename, tr_strerror (errno));
+          char * tmp = tr_strdup_printf ("%s (%s)", filename, error->message);
           send_simple_response (req, HTTP_NOTFOUND, tmp);
           tr_free (tmp);
+          tr_error_free (error);
         }
       else
         {
+          struct evbuffer * content;
           struct evbuffer * out;
           const time_t now = tr_time ();
 
-          errno = error;
+          content = evbuffer_new ();
+          evbuffer_add_reference (content, file, file_len, evbuffer_ref_cleanup_tr_free, file);
+
           out = evbuffer_new ();
           evhttp_add_header (req->output_headers, "Content-Type", mimetype_guess (filename));
           add_time_header (req->output_headers, "Date", now);
@@ -467,9 +459,8 @@ serve_file (struct evhttp_request  * req,
           evhttp_send_reply (req, HTTP_OK, "OK", out);
 
           evbuffer_free (out);
+          evbuffer_free (content);
         }
-
-      evbuffer_free (content);
     }
 }
 
@@ -620,8 +611,8 @@ handle_request (struct evhttp_request * req, void * arg)
       auth = evhttp_find_header (req->input_headers, "Authorization");
       if (auth && !evutil_ascii_strncasecmp (auth, "basic ", 6))
         {
-          int plen;
-          char * p = tr_base64_decode (auth + 6, 0, &plen);
+          size_t plen;
+          char * p = tr_base64_decode_str (auth + 6, &plen);
           if (p && plen && ((pass = strchr (p, ':'))))
             {
               user = p;
@@ -923,10 +914,8 @@ closeServer (void * vserver)
   stopServer (s);
   while ((tmp = tr_list_pop_front (&s->whitelist)))
     tr_free (tmp);
-#ifdef HAVE_ZLIB
   if (s->isStreamInitialized)
     deflateEnd (&s->stream);
-#endif
   tr_free (s->url);
   tr_free (s->sessionId);
   tr_free (s->whitelistStr);
@@ -947,7 +936,7 @@ missing_settings_key (const tr_quark q)
 {
   const char * str = tr_quark_get_string (q, NULL);
   tr_logAddNamedError (MY_NAME, _("Couldn't find settings key \"%s\""), str);
-} 
+}
 
 tr_rpc_server *
 tr_rpcInit (tr_session  * session, tr_variant * settings)

@@ -1,5 +1,5 @@
 /******************************************************************************
- * $Id$
+ * $Id: TorrentCell.m 14221 2014-01-10 17:50:05Z livings124 $
  *
  * Copyright (c) 2006-2012 Transmission authors and contributors
  *

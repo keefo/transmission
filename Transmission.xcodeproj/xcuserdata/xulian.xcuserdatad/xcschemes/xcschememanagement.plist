@@ -14,6 +14,11 @@
 			<key>orderHint</key>
 			<integer>0</integer>
 		</dict>
+		<key>b64.xcscheme</key>
+		<dict>
+			<key>orderHint</key>
+			<integer>11</integer>
+		</dict>
 		<key>dht.xcscheme</key>
 		<dict>
 			<key>orderHint</key>
@@ -113,6 +118,11 @@
 			<true/>
 		</dict>
 		<key>BEFC1CEA0C07822400B0BB3C</key>
+		<dict>
+			<key>primary</key>
+			<true/>
+		</dict>
+		<key>C1639A6E1A55F4D600E42033</key>
 		<dict>
 			<key>primary</key>
 			<true/>

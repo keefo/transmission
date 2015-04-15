@@ -4,7 +4,7 @@
  * It may be used under the GNU GPL versions 2 or 3
  * or any future license endorsed by Mnemosyne LLC.
  *
- * $Id$
+ * $Id: torrent-model.h 14468 2015-01-29 22:44:43Z mikedld $
  */
 
 #ifndef QTR_TORRENT_MODEL_H
@@ -36,7 +36,7 @@ class TorrentModel: public QAbstractListModel
     id_to_row_t myIdToRow;
     id_to_torrent_t myIdToTorrent;
     torrents_t myTorrents;
-    Prefs& myPrefs;
+    const Prefs& myPrefs;
 
   public:
     void clear ();
@@ -71,7 +71,7 @@ class TorrentModel: public QAbstractListModel
     void onTorrentChanged (int propertyId);
 
   public:
-    TorrentModel (Prefs& prefs);
+    TorrentModel (const Prefs& prefs);
     virtual ~TorrentModel ();
 };
 

@@ -4,7 +4,7 @@
  * It may be used under the GNU GPL versions 2 or 3
  * or any future license endorsed by Mnemosyne LLC.
  *
- * $Id$
+ * $Id: session-dialog.h 14393 2014-12-21 23:46:31Z mikedld $
  */
 
 #ifndef SESSION_DIALOG_H
@@ -13,12 +13,10 @@
 #include <QDialog>
 #include <QWidgetList>
 
+#include "ui_session-dialog.h"
+
 class Prefs;
 class Session;
-class QCheckBox;
-class QLineEdit;
-class QRadioButton;
-class QSpinBox;
 
 class SessionDialog: public QDialog
 {
@@ -33,17 +31,9 @@ class SessionDialog: public QDialog
     void resensitize ();
 
   private:
-    QCheckBox * myAuthCheckBox;
-    QRadioButton * myRemoteRadioButton;
-    QLineEdit * myHostLineEdit;
-    QSpinBox * myPortSpinBox;
-    QLineEdit * myUsernameLineEdit;
-    QLineEdit * myPasswordLineEdit;
-    QCheckBox * myAutomaticCheckBox;
-
-  private:
     Session& mySession;
     Prefs& myPrefs;
+    Ui::SessionDialog ui;
     QWidgetList myRemoteWidgets;
     QWidgetList myAuthWidgets;
 };

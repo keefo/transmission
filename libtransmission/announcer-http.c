@@ -4,12 +4,11 @@
  * It may be used under the GNU GPL versions 2 or 3
  * or any future license endorsed by Mnemosyne LLC.
  *
- * $Id$
+ * $Id: announcer-http.c 14336 2014-09-21 18:05:14Z jordan $
  */
 
 #include <limits.h> /* USHRT_MAX */
 #include <stdio.h> /* fprintf () */
-#include <stdlib.h> /* getenv () */
 #include <string.h> /* strchr (), memcmp (), memcpy () */
 
 #include <event2/buffer.h>
@@ -211,7 +210,7 @@ on_announce_done (tr_session   * session,
         tr_variant benc;
         const bool variant_loaded = !tr_variantFromBenc (&benc, msg, msglen);
 
-        if (getenv ("TR_CURL_VERBOSE") != NULL)
+        if (tr_env_key_exists ("TR_CURL_VERBOSE"))
         {
             if (!variant_loaded)
                 fprintf (stderr, "%s", "Announce response was not in benc format\n");
@@ -366,7 +365,7 @@ on_scrape_done (tr_session   * session,
         const char * str;
         const bool variant_loaded = !tr_variantFromBenc (&top, msg, msglen);
 
-        if (getenv ("TR_CURL_VERBOSE") != NULL)
+        if (tr_env_key_exists ("TR_CURL_VERBOSE"))
         {
             if (!variant_loaded)
                 fprintf (stderr, "%s", "Scrape response was not in benc format\n");

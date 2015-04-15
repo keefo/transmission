@@ -1,5 +1,5 @@
 /******************************************************************************
- * $Id$
+ * $Id: InfoOptionsViewController.m 13601 2012-10-29 22:44:12Z livings124 $
  *
  * Copyright (c) 2010-2012 Transmission authors and contributors
  *

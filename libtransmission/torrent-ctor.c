@@ -4,11 +4,13 @@
  * It may be used under the GNU GPL versions 2 or 3
  * or any future license endorsed by Mnemosyne LLC.
  *
- * $Id$
+ * $Id: torrent-ctor.c 14491 2015-04-11 10:51:59Z mikedld $
  */
 
 #include <errno.h> /* EINVAL */
+
 #include "transmission.h"
+#include "file.h"
 #include "magnet.h"
 #include "session.h" /* tr_sessionFindTorrentFile () */
 #include "torrent.h" /* tr_ctorGetSave () */
@@ -133,7 +135,7 @@ tr_ctorSetMetainfoFromFile (tr_ctor *    ctor,
     size_t    len;
     int       err;
 
-    metainfo = tr_loadFile (filename, &len);
+    metainfo = tr_loadFile (filename, &len, NULL);
     if (metainfo && len)
         err = tr_ctorSetMetainfo (ctor, metainfo, len);
     else
@@ -156,7 +158,7 @@ tr_ctorSetMetainfoFromFile (tr_ctor *    ctor,
                     name = NULL;
             if (!name || !*name)
             {
-                char * base = tr_basename (filename);
+                char * base = tr_sys_path_basename (filename, NULL);
                 tr_variantDictAddStr (info, TR_KEY_name, base);
                 tr_free (base);
             }

@@ -4,7 +4,7 @@
  * It may be used under the GNU GPL versions 2 or 3
  * or any future license endorsed by Mnemosyne LLC.
  *
- * $Id$
+ * $Id: watchdir.h 14375 2014-12-11 22:21:24Z mikedld $
  */
 
 #ifndef QTR_WATCHDIR_H
@@ -38,6 +38,9 @@ class WatchDir: public QObject
   private slots:
     void watcherActivated (const QString& path);
     void onTimeout ();
+
+  private slots:
+    void rescanAllWatchedDirectories ();
 
   private:
     const TorrentModel& myModel;
