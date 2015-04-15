@@ -4661,6 +4661,9 @@ void
 evdns_getaddrinfo_cancel(struct evdns_getaddrinfo_request *data)
 {
     //by keefo
+    if (_evthread_lock_fns.lock == NULL || _evthread_lock_fns.unlock == NULL) {
+        return;
+    }
     EVUTIL_ASSERT (_evthread_lock_fns.lock != NULL);
     EVUTIL_ASSERT (_evthread_lock_fns.unlock != NULL);
     
