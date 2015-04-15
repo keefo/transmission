@@ -1059,18 +1059,22 @@ static void sleepCallback(void * controller, io_service_t y, natural_t messageTy
         return;
     }
     
-    //change the location if the group calls for it (this has to wait until after the torrent is created)
-    if ([[GroupsController groups] usesCustomDownloadLocationForIndex: [torrent groupValue]])
-    {
-        location = [[GroupsController groups] customDownloadLocationForIndex: [torrent groupValue]];
-        [torrent changeDownloadFolderBeforeUsing: location determinationType: TorrentDeterminationAutomatic];
-    }
-    
     NSString *lastDestinationFolder = [fDefaults objectForKey:@"lastDestinationFolder"];
     if (lastDestinationFolder)
     {
         location = lastDestinationFolder;
+        [torrent changeDownloadFolderBeforeUsing: location determinationType: TorrentDeterminationAutomatic];
     }
+    else{
+        //change the location if the group calls for it (this has to wait until after the torrent is created)
+        if ([[GroupsController groups] usesCustomDownloadLocationForIndex: [torrent groupValue]])
+        {
+            location = [[GroupsController groups] customDownloadLocationForIndex: [torrent groupValue]];
+            [torrent changeDownloadFolderBeforeUsing: location determinationType: TorrentDeterminationAutomatic];
+        }
+    }
+    
+    
     
     if ([fDefaults boolForKey: @"MagnetOpenAsk"] || !location)
     {

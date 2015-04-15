@@ -279,10 +279,10 @@
     { 
         [fDestination release];
         fDestination = [destination retain];
-        
         [fTorrent changeDownloadFolderBeforeUsing: fDestination determinationType: determinationType];
-        [[NSUserDefaults standardUserDefaults] setObject:fDestination forKey:@"lastDestinationFolder"];
     }
+    
+    [[NSUserDefaults standardUserDefaults] setObject:fDestination forKey:@"lastDestinationFolder"];
     
     [fLocationField setStringValue: [fDestination stringByAbbreviatingWithTildeInPath]];
     [fLocationField setToolTip: fDestination];
